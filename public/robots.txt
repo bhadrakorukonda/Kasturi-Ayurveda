@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+# Disallow crawling of admin or dashboard areas
+Disallow: /dashboard
+
+# Sitemap location (update with actual URL when deployed)
+Sitemap: https://kasturiayurveda.com/sitemap.xml
