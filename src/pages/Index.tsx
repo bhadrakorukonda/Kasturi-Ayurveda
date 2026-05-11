@@ -52,11 +52,11 @@ const Index = () => {
           <div className="overflow-x-auto pb-4">
             <div className="flex gap-4 md:gap-6 px-4 max-w-6xl mx-auto" style={{ scrollSnapType: 'x mandatory' }}>
               {TESTIMONIALS.map((testimonial, index) => (
-                <Card key={index} className="border-2 flex-shrink-0 w-[85vw] md:w-[400px]" style={{ scrollSnapAlign: 'center' }}>
-                  <CardContent className="p-6">
-                    <Quote className="w-8 h-8 text-primary mb-4" />
-                    <p className="text-sm mb-4 italic">{testimonial.text}</p>
-                    <div className="border-t pt-4">
+                <Card key={index} className="border-2 flex-shrink-0 w-[85vw] md:w-[400px] h-80" style={{ scrollSnapAlign: 'center' }}>
+                  <CardContent className="p-6 flex flex-col h-full">
+                    <Quote className="w-8 h-8 text-primary mb-4 flex-shrink-0" />
+                    <p className="text-sm mb-4 italic flex-1">{testimonial.text}</p>
+                    <div className="border-t pt-4 flex-shrink-0">
                       <p className="font-semibold">{testimonial.name}</p>
                       <p className="text-sm text-muted-foreground">{testimonial.condition}</p>
                     </div>
