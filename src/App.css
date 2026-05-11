@@ -40,3 +40,40 @@
 .read-the-docs {
   color: #888;
 }
+
+/* Floating WhatsApp FAB */
+.whatsapp-fab {
+  position: fixed;
+  right: 1rem;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  width: 56px;
+  height: 56px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #25D366;
+  color: white;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+  z-index: 60;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+.whatsapp-fab:hover {
+  transform: translateY(-2px);
+}
+
+/* On very small screens, lift the FAB above the footer area */
+@media (max-width: 640px) {
+  .whatsapp-fab {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 88px);
+    width: 64px;
+    height: 64px;
+  }
+}
+
+/* Also lift FAB on tablets to avoid footer overlap */
+@media (max-width: 1024px) {
+  .whatsapp-fab {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 88px);
+  }
+}
