@@ -1,8 +1,8 @@
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  text-align: left;
 }
 
 .logo {
@@ -41,39 +41,88 @@
   color: #888;
 }
 
+/* Smooth scroll-triggered entrance animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.7s ease-out forwards;
+  opacity: 0;
+}
+
 /* Floating WhatsApp FAB */
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
 .whatsapp-fab {
   position: fixed;
-  right: 1rem;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  right: 24px;
+  bottom: 24px;
   width: 56px;
   height: 56px;
-  border-radius: 9999px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #25D366;
   color: white;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.12);
-  z-index: 60;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+  z-index: 999;
   transition: transform 120ms ease, opacity 120ms ease;
-}
-.whatsapp-fab:hover {
-  transform: translateY(-2px);
+  animation: bounce 2s ease-in-out 0.5s;
 }
 
-/* On very small screens, lift the FAB above the footer area */
+.whatsapp-fab:hover {
+  transform: scale(1.1);
+}
+
+/* Adjust on mobile to avoid overlap with footer and other content */
 @media (max-width: 640px) {
   .whatsapp-fab {
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 88px);
-    width: 64px;
-    height: 64px;
+    bottom: 100px;
+    width: 56px;
+    height: 56px;
   }
 }
 
-/* Also lift FAB on tablets to avoid footer overlap */
-@media (max-width: 1024px) {
-  .whatsapp-fab {
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 88px);
-  }
+/* Testimonials Carousel Styling */
+.carousel-container {
+  display: flex;
+  overflow-x: auto;
+  gap: 24px;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Hide scrollbar while keeping functionality */
+.carousel-container::-webkit-scrollbar {
+  display: none;
+}
+
+.carousel-container {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Carousel cards: 3 visible at a time */
+.carousel-card {
+  width: calc(33.333% - 16px);
+  min-width: calc(33.333% - 16px);
+  flex-shrink: 0;
+  scroll-snap-align: start;
 }

@@ -1,146 +1,566 @@
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Link } from "react-router-dom";
 import { Quote } from "lucide-react";
 import { useScrollAnimation } from "@/hooks/use-scroll-animation";
 import { useSEO } from "@/hooks/use-seo";
 import { TESTIMONIALS } from "@/constants/testimonials";
 import { CONTACT_INFO } from "@/constants/navigation";
+import { Phone, Mail, MapPin, Clock } from "lucide-react";
+import { useRef } from "react";
 
 const Index = () => {
   useSEO({
     title: "Home",
-    description: "Authentic Ayurvedic Healing in the Heart of Hyderabad — led by Dr. K. Saraswathi Himabala, MD (Ayurveda), blending two decades of clinical expertise with classical Ayurvedic therapies.",
+    description:
+      "Authentic Ayurvedic Healing in the Heart of Hyderabad — led by Dr. K. Saraswathi Himabala, MD (Ayurveda), blending two decades of clinical expertise with classical Ayurvedic therapies.",
   });
 
   const heroAnimation = useScrollAnimation();
   const testimonialsAnimation = useScrollAnimation();
+  const carouselRef = useRef<HTMLDivElement>(null);
+
+  const onMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = carouselRef.current;
+    if (!el) return;
+    el.dataset.dragging = "true";
+    el.dataset.startX = String(e.pageX - el.offsetLeft);
+    el.dataset.scrollLeft = String(el.scrollLeft);
+    el.style.cursor = "grabbing";
+  };
+
+  const onMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = carouselRef.current;
+    if (!el || el.dataset.dragging !== "true") return;
+    e.preventDefault();
+    const x = e.pageX - el.offsetLeft;
+    const walk = (x - Number(el.dataset.startX)) * 1.5;
+    el.scrollLeft = Number(el.dataset.scrollLeft) - walk;
+  };
+
+  const onMouseUp = () => {
+    const el = carouselRef.current;
+    if (!el) return;
+    el.dataset.dragging = "false";
+    el.style.cursor = "grab";
+  };
 
   return (
     <div className="min-h-screen">
       <Navbar />
 
-      {/* Hero Section */}
-      <section ref={heroAnimation.ref} className={`pt-24 pb-12 px-4 scroll-animate ${heroAnimation.isVisible ? 'visible' : ''}`}>
-        <div className="container mx-auto text-center max-w-4xl">
-          <div>
-            <h1 className="text-3xl md:text-5xl font-serif font-bold text-foreground mb-4">
-              Healing the Natural Way
-            </h1>
-            <p className="text-sm md:text-base text-muted-foreground mb-6 max-w-3xl mx-auto leading-relaxed">
-              Authentic Ayurvedic Healing in the Heart of Hyderabad — led by Dr. K. Saraswathi Himabala, MD (Ayurveda), blending two decades of clinical expertise with classical Ayurvedic therapies for pain relief, lifestyle disorders, and holistic wellness.
-            </p>
-            <Link to="/booking">
-              <Button size="lg" className="rounded-full px-6 text-sm">
-                Book Your Appointment
-              </Button>
-            </Link>
-          </div>
+      {/* ── HERO ── */}
+      <section
+        ref={heroAnimation.ref}
+        className={`scroll-animate ${heroAnimation.isVisible ? "visible" : ""}`}
+        style={{
+          minHeight: "600px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          position: "relative",
+          backgroundImage:
+            "url('https://images.unsplash.com/photo-1515377905703-c4788e51af15?w=1600&q=80')",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundAttachment: "fixed",
+          padding: "80px 20px",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            backgroundColor: "rgba(20, 50, 30, 0.45)",
+          }}
+        />
+        <div
+          style={{
+            position: "relative",
+            zIndex: 10,
+            textAlign: "center",
+            maxWidth: "760px",
+            margin: "0 auto",
+          }}
+          className="animate-fade-in-up"
+        >
+          <h1
+            style={{
+              fontFamily: "serif",
+              fontSize: "clamp(2rem, 5vw, 3.5rem)",
+              fontWeight: 700,
+              color: "#ffffff",
+              marginBottom: "16px",
+              lineHeight: 1.2,
+            }}
+          >
+            Healing the Natural Way
+          </h1>
+          <p
+            style={{
+              fontSize: "clamp(0.875rem, 2vw, 1rem)",
+              color: "rgba(255,255,255,0.9)",
+              marginBottom: "28px",
+              lineHeight: 1.8,
+              maxWidth: "640px",
+              margin: "0 auto 28px",
+            }}
+          >
+            Authentic Ayurvedic Healing in the Heart of Hyderabad — led by Dr.
+            K. Saraswathi Himabala, MD (Ayurveda), blending two decades of
+            clinical expertise with classical Ayurvedic therapies for pain
+            relief, lifestyle disorders, and holistic wellness.
+          </p>
+          <Link to="/booking">
+            <Button
+              size="lg"
+              style={{ borderRadius: "999px", padding: "12px 28px" }}
+            >
+              Book Your Appointment
+            </Button>
+          </Link>
         </div>
       </section>
 
-      
-
-      {/* About Us Section (merged from About page) */}
-      <section className="py-12 px-4 bg-background/50">
-        <div className="container mx-auto max-w-6xl">
-          <div className="text-center mb-6">
-            <h2 className="text-2xl md:text-3xl font-serif font-semibold mb-2">About Us</h2>
-            <p className="text-muted-foreground text-sm max-w-3xl mx-auto">
-              Our vision is to restore balance and holistic wellbeing through authentic Ayurvedic care. Our mission is to deliver compassionate, evidence-informed Ayurvedic treatments tailored to each patient — with a special focus on Panchakarma and chronic pain management.
+      {/* ── ABOUT US ── */}
+      <section style={{ padding: "80px 20px", backgroundColor: "#ffffff" }}>
+        <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
+          {/* Vision & Mission */}
+          <div style={{ textAlign: "center", marginBottom: "56px" }}>
+            <h2
+              style={{
+                fontFamily: "serif",
+                fontSize: "clamp(1.5rem, 3vw, 2rem)",
+                fontWeight: 600,
+                marginBottom: "12px",
+              }}
+            >
+              About Us
+            </h2>
+            <p
+              style={{
+                color: "#6b7280",
+                fontSize: "14px",
+                maxWidth: "680px",
+                margin: "0 auto",
+                lineHeight: 1.8,
+              }}
+            >
+              Our vision is to restore balance and holistic wellbeing through
+              authentic Ayurvedic care. Our mission is to deliver compassionate,
+              evidence-informed Ayurvedic treatments tailored to each patient —
+              with a special focus on Panchakarma and chronic pain management.
             </p>
+            <div
+              style={{
+                marginTop: "20px",
+                height: "4px",
+                width: "48px",
+                backgroundColor: "#6b9e78",
+                borderRadius: "2px",
+                margin: "20px auto 0",
+              }}
+            />
           </div>
 
-          <div className="flex flex-col xl:flex-row items-start gap-6 px-4">
-            <div className="xl:w-1/3 flex justify-center">
+          {/* Doctor Profile */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "row",
+              flexWrap: "wrap",
+              gap: "40px",
+              alignItems: "flex-start",
+            }}
+          >
+            {/* Photo */}
+            <div
+              style={{
+                flex: "0 0 auto",
+                width: "clamp(200px, 30%, 260px)",
+                margin: "0 auto",
+              }}
+              className="animate-fade-in-up"
+            >
               <img
-                src="https://via.placeholder.com/300?text=Dr+K+Saraswathi"
+                src="https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=600&q=80"
                 alt="Dr. K. Saraswathi Himabala"
-                className="w-48 h-48 rounded-lg object-cover object-center shadow-sm"
+                style={{
+                  width: "100%",
+                  aspectRatio: "3/4",
+                  objectFit: "cover",
+                  objectPosition: "center",
+                  borderRadius: "16px",
+                  border: "3px solid #d4e8d4",
+                  display: "block",
+                }}
               />
             </div>
 
-            <div className="xl:w-2/3">
-              <h3 className="text-lg font-semibold">Dr. K. Saraswathi Himabala, MD (Ayurveda)</h3>
-              <p className="text-sm text-muted-foreground mb-4">20+ years experience · MD Ayurveda · Specialised in Panchakarma & pain management</p>
-              <p className="mb-4 leading-relaxed">
-                Dr. K. Saraswathi Himabala brings over two decades of clinical experience in classical Ayurvedic therapies. She combines traditional Panchakarma techniques with individualized lifestyle and dietary guidance to help patients recover from chronic pain, metabolic disorders, and stress-related conditions. Her approach focuses on uncovering root causes and restoring long-term balance.
+            {/* Bio */}
+            <div
+              style={{ flex: "1 1 320px" }}
+              className="animate-fade-in-up"
+            >
+              <h3
+                style={{
+                  fontSize: "1.5rem",
+                  fontWeight: 600,
+                  marginBottom: "4px",
+                }}
+              >
+                Dr. K. Saraswathi Himabala
+              </h3>
+              <p
+                style={{
+                  color: "#6b9e78",
+                  fontWeight: 500,
+                  marginBottom: "16px",
+                }}
+              >
+                MD (Ayurveda)
               </p>
-              <p className="text-sm text-muted-foreground">Learn more about our approach or book a consultation to discuss your care plan.</p>
+
+              {/* Badges */}
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "8px",
+                  marginBottom: "20px",
+                }}
+              >
+                {["MD Ayurveda", "20+ Years Experience", "Panchakarma Specialist"].map(
+                  (badge) => (
+                    <span
+                      key={badge}
+                      style={{
+                        background: "#e8f3e8",
+                        color: "#2d5a3d",
+                        padding: "6px 14px",
+                        borderRadius: "999px",
+                        fontSize: "12px",
+                        fontWeight: 500,
+                      }}
+                    >
+                      {badge}
+                    </span>
+                  )
+                )}
+              </div>
+
+              <p
+                style={{
+                  fontSize: "14px",
+                  color: "#6b7280",
+                  lineHeight: 1.8,
+                  marginBottom: "12px",
+                }}
+              >
+                Dr. K. Saraswathi Himabala brings over two decades of clinical
+                experience in classical Ayurvedic therapies. She combines
+                traditional Panchakarma techniques with individualized lifestyle
+                and dietary guidance to help patients recover from chronic pain,
+                metabolic disorders, and stress-related conditions. Her approach
+                focuses on uncovering root causes and restoring long-term
+                balance.
+              </p>
+              <p style={{ fontSize: "14px", color: "#6b7280" }}>
+                Learn more about our approach or book a consultation to discuss
+                your care plan.
+              </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Testimonials Section with Carousel */}
-      <section ref={testimonialsAnimation.ref} className={`py-8 px-4 bg-accent/30 scroll-animate ${testimonialsAnimation.isVisible ? 'visible' : ''}`}>
-        <div className="container mx-auto">
-          <div className="text-center mb-6">
-            <h2 className="text-2xl md:text-3xl font-serif font-semibold mb-2">Patient Success Stories</h2>
-            <p className="text-muted-foreground text-xs md:text-sm">Real experiences from our healing community</p>
+      {/* ── TESTIMONIALS ── */}
+      <section
+        ref={testimonialsAnimation.ref}
+        className={`scroll-animate ${testimonialsAnimation.isVisible ? "visible" : ""}`}
+        style={{ padding: "80px 20px", backgroundColor: "#f0f5ec" }}
+      >
+        <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: "48px" }}>
+            <h2
+              style={{
+                fontFamily: "serif",
+                fontSize: "clamp(1.5rem, 3vw, 2rem)",
+                fontWeight: 600,
+                marginBottom: "8px",
+              }}
+            >
+              Patient Success Stories
+            </h2>
+            <p style={{ color: "#6b7280", fontSize: "13px" }}>
+              Real experiences from our healing community
+            </p>
           </div>
 
-          {/* Scrollable view for all screen sizes */}
-          <div className="overflow-x-auto pb-4">
-            <div className="flex gap-4 md:gap-6 px-4 max-w-6xl mx-auto items-stretch" style={{ scrollSnapType: 'x mandatory' }}>
+          {/* Carousel wrapper — drag to scroll */}
+          <div
+            ref={carouselRef}
+            onMouseDown={onMouseDown}
+            onMouseMove={onMouseMove}
+            onMouseUp={onMouseUp}
+            onMouseLeave={onMouseUp}
+            style={{
+              display: "flex",
+              gap: "24px",
+              overflowX: "auto",
+              scrollSnapType: "x mandatory",
+              scrollBehavior: "smooth",
+              msOverflowStyle: "none",
+              scrollbarWidth: "none",
+              cursor: "grab",
+              userSelect: "none",
+            }}
+          >
               {TESTIMONIALS.map((testimonial, index) => (
-                <Card key={index} className="border-2 flex-shrink-0 w-[85vw] md:w-[400px] h-80 flex flex-col" style={{ scrollSnapAlign: 'center' }}>
-                  <CardContent className="p-6 flex flex-col h-full">
-                    <Quote className="w-8 h-8 text-primary mb-4 flex-shrink-0" />
-                    <p className="text-sm mb-4 italic flex-1">{testimonial.text}</p>
-                    <div className="border-t pt-4 flex-shrink-0">
-                      <p className="font-semibold">{testimonial.name}</p>
-                      <p className="text-sm text-muted-foreground">{testimonial.condition}</p>
-                    </div>
-                  </CardContent>
-                </Card>
+                <div
+                  key={index}
+                  className="ka-card animate-fade-in-up"
+                  style={{
+                    // Exactly 1/3 of track width minus gaps
+                    flex: "0 0 calc(33.333% - 16px)",
+                    minWidth: "260px",
+                    scrollSnapAlign: "start",
+                    // ── THE FIX ──
+                    height: "320px",
+                    display: "flex",
+                    flexDirection: "column",
+                    // Card styling
+                    background: "#ffffff",
+                    borderRadius: "16px",
+                    border: "1px solid #e2e8f0",
+                    padding: "24px",
+                    boxSizing: "border-box",
+                    animationDelay: `${index * 0.1}s`,
+                  }}
+                >
+                  <Quote
+                    style={{
+                      width: "28px",
+                      height: "28px",
+                      color: "#6b9e78",
+                      flexShrink: 0,
+                      marginBottom: "12px",
+                    }}
+                  />
+                  {/* flex:1 makes this grow and push footer down */}
+                  <p
+                    style={{
+                      flex: 1,
+                      fontSize: "13px",
+                      fontStyle: "italic",
+                      lineHeight: 1.7,
+                      color: "#374151",
+                      margin: 0,
+                      // Clamp long reviews cleanly
+                      overflow: "hidden",
+                      display: "-webkit-box",
+                      WebkitLineClamp: 6,
+                      WebkitBoxOrient: "vertical",
+                    }}
+                  >
+                    {testimonial.text}
+                  </p>
+                  {/* Footer always pinned to bottom */}
+                  <div
+                    style={{
+                      borderTop: "1px solid #e5e7eb",
+                      paddingTop: "14px",
+                      marginTop: "14px",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <p
+                      style={{
+                        fontWeight: 600,
+                        fontSize: "14px",
+                        margin: 0,
+                        color: "#111827",
+                      }}
+                    >
+                      {testimonial.name}
+                    </p>
+                    <p
+                      style={{
+                        fontSize: "12px",
+                        color: "#6b7280",
+                        margin: "2px 0 0",
+                      }}
+                    >
+                      {testimonial.condition}
+                    </p>
+                  </div>
+                </div>
               ))}
             </div>
-          </div>
+
         </div>
       </section>
 
-      {/* Contact & Location */}
-      <section className="py-12 px-4">
-        <div className="container mx-auto max-w-6xl">
-          <div className="text-center mb-6">
-            <h2 className="text-2xl md:text-3xl font-serif font-semibold mb-2">Contact & Location</h2>
-            <p className="text-muted-foreground text-sm max-w-3xl mx-auto">Find us at our clinic or get in touch to schedule an appointment.</p>
+      {/* ── CONTACT & LOCATION ── */}
+      <section style={{ padding: "80px 20px", backgroundColor: "#ffffff" }}>
+        <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: "48px" }}>
+            <h2
+              style={{
+                fontFamily: "serif",
+                fontSize: "clamp(1.5rem, 3vw, 2rem)",
+                fontWeight: 600,
+                marginBottom: "8px",
+              }}
+            >
+              Contact & Location
+            </h2>
+            <p style={{ color: "#6b7280", fontSize: "14px" }}>
+              Find us at our clinic or get in touch to schedule an appointment.
+            </p>
           </div>
 
-          <div className="flex flex-col md:flex-row gap-6 px-4">
-            <div className="md:w-1/2">
-              <div className="w-full overflow-hidden shadow-sm">
-                <iframe
-                  title="Kasturi Ayurveda Location"
-                  src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3806.9!2d78.4911864!3d17.4038354!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3bcb990106888ec9%3A0x52015ed567a390fa!2sKasturi%20Ayurveda!5e0!3m2!1sen!2sin!4v1"
-                  width="100%"
-                  height="400"
-                  style={{ border: 0, borderRadius: 12 }}
-                  allowFullScreen
-                  loading="lazy"
-                  referrerPolicy="no-referrer-when-downgrade"
-                  className="w-full"
-                />
-              </div>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "40px",
+              alignItems: "stretch",
+            }}
+          >
+            {/* Map */}
+            <div
+              style={{ flex: "1 1 320px", minHeight: "420px" }}
+              className="animate-fade-in-up"
+            >
+              <iframe
+                title="Kasturi Ayurveda Location"
+                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3806.9!2d78.4911864!3d17.4038354!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3bcb990106888ec9%3A0x52015ed567a390fa!2sKasturi%20Ayurveda!5e0!3m2!1sen!2sin!4v1"
+                width="100%"
+                height="100%"
+                style={{
+                  border: 0,
+                  borderRadius: "12px",
+                  display: "block",
+                  minHeight: "420px",
+                }}
+                allowFullScreen
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+              />
             </div>
 
-            <div className="md:w-1/2 flex flex-col justify-center">
-              <div className="bg-background/50 p-6 rounded shadow-sm">
-                <h3 className="text-lg font-semibold mb-2">Clinic Address</h3>
-                <p className="mb-4 text-sm">Kasturi Ayurveda Clinic<br/>Hyderabad, Telangana 500XXX</p>
+            {/* Details */}
+            <div
+              style={{ flex: "1 1 280px" }}
+              className="animate-fade-in-up"
+            >
+              <h3
+                style={{
+                  fontSize: "1.2rem",
+                  fontWeight: 600,
+                  color: "#2d5a3d",
+                  marginBottom: "28px",
+                }}
+              >
+                Get In Touch
+              </h3>
 
-                <h4 className="text-sm font-medium">Phone</h4>
-                <p className="mb-4">{CONTACT_INFO.phone}</p>
-
-                <h4 className="text-sm font-medium">Email</h4>
-                <p className="mb-4">{CONTACT_INFO.email}</p>
-
-                <h4 className="text-sm font-medium">Clinic Hours</h4>
-                <p className="text-sm">Morning: {"10 AM – 2 PM"}<br/>Evening: {"6 PM – 9 PM"}</p>
-              </div>
+              {[
+                {
+                  Icon: MapPin,
+                  label: "Address",
+                  content: (
+                    <>
+                      <p style={{ fontSize: "14px", color: "#6b7280", margin: "2px 0 10px" }}>
+                        Kasturi Ayurveda Clinic, Hyderabad, Telangana 500020
+                      </p>
+                      <a
+                        href="https://maps.app.goo.gl/pLffCKNcDGzDJ7C69"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          display: "inline-block",
+                          padding: "6px 16px",
+                          background: "#6b9e78",
+                          color: "#fff",
+                          borderRadius: "6px",
+                          fontSize: "12px",
+                          fontWeight: 500,
+                          textDecoration: "none",
+                        }}
+                      >
+                        Get Directions
+                      </a>
+                    </>
+                  ),
+                },
+                {
+                  Icon: Phone,
+                  label: "Phone",
+                  content: (
+                    <a
+                      href={`tel:${CONTACT_INFO.phone}`}
+                      style={{ fontSize: "14px", color: "#6b7280", textDecoration: "none" }}
+                    >
+                      {CONTACT_INFO.phone}
+                    </a>
+                  ),
+                },
+                {
+                  Icon: Mail,
+                  label: "Email",
+                  content: (
+                    <a
+                      href={`mailto:${CONTACT_INFO.email}`}
+                      style={{
+                        fontSize: "14px",
+                        color: "#6b7280",
+                        textDecoration: "none",
+                        wordBreak: "break-all",
+                      }}
+                    >
+                      {CONTACT_INFO.email}
+                    </a>
+                  ),
+                },
+                {
+                  Icon: Clock,
+                  label: "Clinic Hours",
+                  content: (
+                    <>
+                      <p style={{ fontSize: "14px", color: "#6b7280", margin: "2px 0 0" }}>
+                        Morning: 10 AM – 2 PM
+                      </p>
+                      <p style={{ fontSize: "14px", color: "#6b7280", margin: "2px 0 0" }}>
+                        Evening: 6 PM – 9 PM
+                      </p>
+                    </>
+                  ),
+                },
+              ].map(({ Icon, label, content }) => (
+                <div
+                  key={label}
+                  style={{ display: "flex", gap: "12px", marginBottom: "24px" }}
+                >
+                  <Icon
+                    style={{
+                      width: "18px",
+                      height: "18px",
+                      color: "#6b9e78",
+                      flexShrink: 0,
+                      marginTop: "2px",
+                    }}
+                  />
+                  <div>
+                    <p style={{ fontSize: "13px", fontWeight: 600, margin: "0 0 2px" }}>
+                      {label}
+                    </p>
+                    {content}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
