@@ -47,25 +47,28 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen">
+    <div className="h-screen overflow-y-auto snap-y snap-mandatory scroll-smooth">
       <Navbar />
+
+      <main>
 
       {/* ── HERO ── */}
       <section
         ref={heroAnimation.ref}
         className={`scroll-animate ${heroAnimation.isVisible ? "visible" : ""}`}
         style={{
-          minHeight: "600px",
+          minHeight: "100vh",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
+          scrollSnapAlign: "start",
           position: "relative",
           backgroundImage:
             "url('https://images.unsplash.com/photo-1515377905703-c4788e51af15?w=1600&q=80')",
           backgroundSize: "cover",
           backgroundPosition: "center",
           backgroundAttachment: "fixed",
-          padding: "80px 20px",
+          padding: "110px 20px 40px",
         }}
       >
         <div
@@ -124,8 +127,27 @@ const Index = () => {
       </section>
 
       {/* ── ABOUT US ── */}
-      <section style={{ padding: "80px 20px", backgroundColor: "#ffffff" }}>
-        <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
+      <section
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          scrollSnapAlign: "start",
+          padding: "110px 20px 40px",
+          backgroundColor: "#ffffff",
+        }}
+      >
+        <div
+          style={{
+            maxWidth: "1100px",
+            margin: "0 auto",
+            width: "100%",
+            backgroundColor: "#ffffff",
+            borderRadius: "24px",
+            boxShadow: "0 20px 50px rgba(16, 24, 40, 0.08)",
+            padding: "clamp(20px, 3vw, 32px)",
+          }}
+        >
           {/* Vision & Mission */}
           <div style={{ textAlign: "center", marginBottom: "56px" }}>
             <h2
@@ -279,9 +301,26 @@ const Index = () => {
       <section
         ref={testimonialsAnimation.ref}
         className={`scroll-animate ${testimonialsAnimation.isVisible ? "visible" : ""}`}
-        style={{ padding: "80px 20px", backgroundColor: "#f0f5ec" }}
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          scrollSnapAlign: "start",
+          padding: "110px 20px 40px",
+          backgroundColor: "#f0f5ec",
+        }}
       >
-        <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
+        <div
+          style={{
+            maxWidth: "1100px",
+            margin: "0 auto",
+            width: "100%",
+            backgroundColor: "#f8fbf6",
+            borderRadius: "24px",
+            boxShadow: "0 20px 50px rgba(43, 78, 52, 0.12)",
+            padding: "clamp(20px, 3vw, 32px)",
+          }}
+        >
           <div style={{ textAlign: "center", marginBottom: "48px" }}>
             <h2
               style={{
@@ -403,8 +442,27 @@ const Index = () => {
       </section>
 
       {/* ── CONTACT & LOCATION ── */}
-      <section style={{ padding: "80px 20px", backgroundColor: "#ffffff" }}>
-        <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
+      <section
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          scrollSnapAlign: "start",
+          padding: "110px 20px 40px",
+          backgroundColor: "#ffffff",
+        }}
+      >
+        <div
+          style={{
+            maxWidth: "1100px",
+            margin: "0 auto",
+            width: "100%",
+            backgroundColor: "#ffffff",
+            borderRadius: "24px",
+            boxShadow: "0 20px 50px rgba(16, 24, 40, 0.08)",
+            padding: "clamp(20px, 3vw, 32px)",
+          }}
+        >
           <div style={{ textAlign: "center", marginBottom: "48px" }}>
             <h2
               style={{
@@ -565,6 +623,8 @@ const Index = () => {
           </div>
         </div>
       </section>
+
+      </main>
 
       <Footer />
     </div>
