@@ -126,3 +126,23 @@
   flex-shrink: 0;
   scroll-snap-align: start;
 }
+
+.ka-card {
+  flex: 0 0 calc(33.333% - 16px);
+  min-width: calc(33.333% - 16px);
+  scroll-snap-align: start;
+}
+
+@media (max-width: 1024px) {
+  .ka-card {
+    flex: 0 0 calc(50% - 12px);
+    min-width: calc(50% - 12px);
+  }
+}
+
+@media (max-width: 640px) {
+  .ka-card {
+    flex: 0 0 calc(100% - 4px);
+    min-width: calc(100% - 4px);
+  }
+}

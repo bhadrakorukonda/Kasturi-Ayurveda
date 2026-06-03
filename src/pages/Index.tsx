@@ -47,7 +47,10 @@ const Index = () => {
   };
 
   return (
-    <div className="h-screen overflow-y-auto snap-y snap-mandatory scroll-smooth">
+    <div
+      className="h-screen overflow-y-auto snap-y snap-proximity scroll-smooth"
+      style={{ scrollPaddingTop: "88px" }}
+    >
       <Navbar />
 
       <main>
@@ -57,7 +60,7 @@ const Index = () => {
         ref={heroAnimation.ref}
         className={`scroll-animate ${heroAnimation.isVisible ? "visible" : ""}`}
         style={{
-          minHeight: "100vh",
+          minHeight: "100svh",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -129,11 +132,11 @@ const Index = () => {
       {/* ── ABOUT US ── */}
       <section
         style={{
-          minHeight: "100vh",
+          minHeight: "100svh",
           display: "flex",
           alignItems: "center",
           scrollSnapAlign: "start",
-          padding: "110px 20px 40px",
+          padding: "110px clamp(16px, 4vw, 24px) 40px",
           backgroundColor: "#ffffff",
         }}
       >
@@ -142,6 +145,10 @@ const Index = () => {
             maxWidth: "1100px",
             margin: "0 auto",
             width: "100%",
+            minHeight: "calc(100svh - 170px)",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
             backgroundColor: "#ffffff",
             borderRadius: "24px",
             boxShadow: "0 20px 50px rgba(16, 24, 40, 0.08)",
@@ -302,11 +309,11 @@ const Index = () => {
         ref={testimonialsAnimation.ref}
         className={`scroll-animate ${testimonialsAnimation.isVisible ? "visible" : ""}`}
         style={{
-          minHeight: "100vh",
+          minHeight: "100svh",
           display: "flex",
           alignItems: "center",
           scrollSnapAlign: "start",
-          padding: "110px 20px 40px",
+          padding: "110px clamp(16px, 4vw, 24px) 40px",
           backgroundColor: "#f0f5ec",
         }}
       >
@@ -361,10 +368,6 @@ const Index = () => {
                   key={index}
                   className="ka-card animate-fade-in-up"
                   style={{
-                    // Exactly 1/3 of track width minus gaps
-                    flex: "0 0 calc(33.333% - 16px)",
-                    minWidth: "260px",
-                    scrollSnapAlign: "start",
                     // ── THE FIX ──
                     height: "320px",
                     display: "flex",
@@ -444,11 +447,11 @@ const Index = () => {
       {/* ── CONTACT & LOCATION ── */}
       <section
         style={{
-          minHeight: "100vh",
+          minHeight: "100svh",
           display: "flex",
           alignItems: "center",
           scrollSnapAlign: "start",
-          padding: "110px 20px 40px",
+          padding: "110px clamp(16px, 4vw, 24px) 40px",
           backgroundColor: "#ffffff",
         }}
       >
