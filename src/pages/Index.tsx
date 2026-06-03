@@ -2,7 +2,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-import { Quote } from "lucide-react";
+import { Quote, ChevronLeft, ChevronRight } from "lucide-react";
 import { useScrollAnimation } from "@/hooks/use-scroll-animation";
 import { useSEO } from "@/hooks/use-seo";
 import { TESTIMONIALS } from "@/constants/testimonials";
@@ -44,6 +44,15 @@ const Index = () => {
     if (!el) return;
     el.dataset.dragging = "false";
     el.style.cursor = "grab";
+  };
+
+  const scrollCarousel = (direction: "left" | "right") => {
+    const el = carouselRef.current;
+    if (!el) return;
+    // determine card width (first .ka-card) or fallback to one-third
+    const firstCard = el.querySelector(".ka-card") as HTMLElement | null;
+    const cardWidth = firstCard ? firstCard.offsetWidth + 24 : Math.floor(el.clientWidth / 3);
+    el.scrollBy({ left: direction === "left" ? -cardWidth : cardWidth, behavior: "smooth" });
   };
 
   return (
@@ -345,24 +354,48 @@ const Index = () => {
           </div>
 
           {/* Carousel wrapper — drag to scroll */}
-          <div
-            ref={carouselRef}
-            onMouseDown={onMouseDown}
-            onMouseMove={onMouseMove}
-            onMouseUp={onMouseUp}
-            onMouseLeave={onMouseUp}
-            style={{
-              display: "flex",
-              gap: "24px",
-              overflowX: "auto",
-              scrollSnapType: "x mandatory",
-              scrollBehavior: "smooth",
-              msOverflowStyle: "none",
-              scrollbarWidth: "none",
-              cursor: "grab",
-              userSelect: "none",
-            }}
-          >
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={() => scrollCarousel("left")}
+              aria-label="Scroll testimonials left"
+              style={{
+                position: "absolute",
+                left: "8px",
+                top: "50%",
+                transform: "translateY(-50%)",
+                zIndex: 30,
+                background: "#ffffff",
+                borderRadius: "999px",
+                padding: "8px",
+                boxShadow: "0 6px 18px rgba(0,0,0,0.08)",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              <ChevronLeft style={{ width: 20, height: 20, color: "#2d5a3d" }} />
+            </button>
+
+            <div
+              ref={carouselRef}
+              onMouseDown={onMouseDown}
+              onMouseMove={onMouseMove}
+              onMouseUp={onMouseUp}
+              onMouseLeave={onMouseUp}
+              style={{
+                display: "flex",
+                gap: "24px",
+                overflowX: "auto",
+                scrollSnapType: "x mandatory",
+                scrollBehavior: "smooth",
+                msOverflowStyle: "none",
+                scrollbarWidth: "none",
+                cursor: "grab",
+                userSelect: "none",
+                height: "360px",
+                alignItems: "center",
+                padding: "8px 6px",
+              }}
+            >
               {TESTIMONIALS.map((testimonial, index) => (
                 <div
                   key={index}
@@ -440,6 +473,28 @@ const Index = () => {
                 </div>
               ))}
             </div>
+
+            <button
+              onClick={() => scrollCarousel("right")}
+              aria-label="Scroll testimonials right"
+              style={{
+                position: "absolute",
+                right: "8px",
+                top: "50%",
+                transform: "translateY(-50%)",
+                zIndex: 30,
+                background: "#ffffff",
+                borderRadius: "999px",
+                padding: "8px",
+                boxShadow: "0 6px 18px rgba(0,0,0,0.08)",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              <ChevronRight style={{ width: 20, height: 20, color: "#2d5a3d" }} />
+            </button>
+
+          </div>
 
         </div>
       </section>
