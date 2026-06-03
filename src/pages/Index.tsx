@@ -2,7 +2,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-import { Quote, ChevronLeft, ChevronRight } from "lucide-react";
+import { Quote } from "lucide-react";
 import { useScrollAnimation } from "@/hooks/use-scroll-animation";
 import { useSEO } from "@/hooks/use-seo";
 import { TESTIMONIALS } from "@/constants/testimonials";
@@ -46,23 +46,9 @@ const Index = () => {
     el.style.cursor = "grab";
   };
 
-  const scrollCarousel = (direction: "left" | "right") => {
-    const el = carouselRef.current;
-    if (!el) return;
-    // determine card width (first .ka-card) or fallback to one-third
-    const firstCard = el.querySelector(".ka-card") as HTMLElement | null;
-    const cardWidth = firstCard ? firstCard.offsetWidth + 24 : Math.floor(el.clientWidth / 3);
-    el.scrollBy({ left: direction === "left" ? -cardWidth : cardWidth, behavior: "smooth" });
-  };
-
   return (
-    <div
-      className="h-screen overflow-y-auto snap-y snap-proximity scroll-smooth"
-      style={{ scrollPaddingTop: "88px" }}
-    >
+    <div className="min-h-screen">
       <Navbar />
-
-      <main>
 
       {/* ── HERO ── */}
       <section
@@ -73,14 +59,13 @@ const Index = () => {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          scrollSnapAlign: "start",
           position: "relative",
           backgroundImage:
             "url('https://images.unsplash.com/photo-1515377905703-c4788e51af15?w=1600&q=80')",
           backgroundSize: "cover",
           backgroundPosition: "center",
           backgroundAttachment: "fixed",
-          padding: "110px 20px 40px",
+          padding: "88px 20px 40px",
         }}
       >
         <div
@@ -139,31 +124,8 @@ const Index = () => {
       </section>
 
       {/* ── ABOUT US ── */}
-      <section
-        style={{
-          minHeight: "100svh",
-          display: "flex",
-          alignItems: "center",
-          scrollSnapAlign: "start",
-          padding: "110px clamp(16px, 4vw, 24px) 40px",
-          backgroundColor: "#ffffff",
-        }}
-      >
-        <div
-          style={{
-            maxWidth: "1100px",
-            margin: "0 auto",
-            width: "100%",
-            minHeight: "calc(100svh - 170px)",
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "center",
-            backgroundColor: "#ffffff",
-            borderRadius: "24px",
-            boxShadow: "0 20px 50px rgba(16, 24, 40, 0.08)",
-            padding: "clamp(20px, 3vw, 32px)",
-          }}
-        >
+      <section style={{ minHeight: "100svh", display: "flex", alignItems: "center", padding: "88px 20px 40px", backgroundColor: "#ffffff" }}>
+        <div style={{ maxWidth: "1100px", width: "100%", margin: "0 auto" }}>
           {/* Vision & Mission */}
           <div style={{ textAlign: "center", marginBottom: "56px" }}>
             <h2
@@ -317,26 +279,9 @@ const Index = () => {
       <section
         ref={testimonialsAnimation.ref}
         className={`scroll-animate ${testimonialsAnimation.isVisible ? "visible" : ""}`}
-        style={{
-          minHeight: "100svh",
-          display: "flex",
-          alignItems: "center",
-          scrollSnapAlign: "start",
-          padding: "110px clamp(16px, 4vw, 24px) 40px",
-          backgroundColor: "#f0f5ec",
-        }}
+        style={{ minHeight: "100svh", display: "flex", alignItems: "center", padding: "88px 20px 40px", backgroundColor: "#f0f5ec" }}
       >
-        <div
-          style={{
-            maxWidth: "1100px",
-            margin: "0 auto",
-            width: "100%",
-            backgroundColor: "#f8fbf6",
-            borderRadius: "24px",
-            boxShadow: "0 20px 50px rgba(43, 78, 52, 0.12)",
-            padding: "clamp(20px, 3vw, 32px)",
-          }}
-        >
+        <div style={{ maxWidth: "1100px", width: "100%", margin: "0 auto" }}>
           <div style={{ textAlign: "center", marginBottom: "48px" }}>
             <h2
               style={{
@@ -354,53 +299,33 @@ const Index = () => {
           </div>
 
           {/* Carousel wrapper — drag to scroll */}
-          <div style={{ position: "relative" }}>
-            <button
-              onClick={() => scrollCarousel("left")}
-              aria-label="Scroll testimonials left"
-              style={{
-                position: "absolute",
-                left: "8px",
-                top: "50%",
-                transform: "translateY(-50%)",
-                zIndex: 30,
-                background: "#ffffff",
-                borderRadius: "999px",
-                padding: "8px",
-                boxShadow: "0 6px 18px rgba(0,0,0,0.08)",
-                border: "none",
-                cursor: "pointer",
-              }}
-            >
-              <ChevronLeft style={{ width: 20, height: 20, color: "#2d5a3d" }} />
-            </button>
-
-            <div
-              ref={carouselRef}
-              onMouseDown={onMouseDown}
-              onMouseMove={onMouseMove}
-              onMouseUp={onMouseUp}
-              onMouseLeave={onMouseUp}
-              style={{
-                display: "flex",
-                gap: "24px",
-                overflowX: "auto",
-                scrollSnapType: "x mandatory",
-                scrollBehavior: "smooth",
-                msOverflowStyle: "none",
-                scrollbarWidth: "none",
-                cursor: "grab",
-                userSelect: "none",
-                height: "360px",
-                alignItems: "center",
-                padding: "8px 6px",
-              }}
-            >
+          <div
+            ref={carouselRef}
+            onMouseDown={onMouseDown}
+            onMouseMove={onMouseMove}
+            onMouseUp={onMouseUp}
+            onMouseLeave={onMouseUp}
+            style={{
+              display: "flex",
+              gap: "24px",
+              overflowX: "auto",
+              scrollSnapType: "x mandatory",
+              scrollBehavior: "smooth",
+              msOverflowStyle: "none",
+              scrollbarWidth: "none",
+              cursor: "grab",
+              userSelect: "none",
+            }}
+          >
               {TESTIMONIALS.map((testimonial, index) => (
                 <div
                   key={index}
                   className="ka-card animate-fade-in-up"
                   style={{
+                    // Exactly 1/3 of track width minus gaps
+                    flex: "0 0 calc(33.333% - 16px)",
+                    minWidth: "260px",
+                    scrollSnapAlign: "start",
                     // ── THE FIX ──
                     height: "320px",
                     display: "flex",
@@ -474,53 +399,12 @@ const Index = () => {
               ))}
             </div>
 
-            <button
-              onClick={() => scrollCarousel("right")}
-              aria-label="Scroll testimonials right"
-              style={{
-                position: "absolute",
-                right: "8px",
-                top: "50%",
-                transform: "translateY(-50%)",
-                zIndex: 30,
-                background: "#ffffff",
-                borderRadius: "999px",
-                padding: "8px",
-                boxShadow: "0 6px 18px rgba(0,0,0,0.08)",
-                border: "none",
-                cursor: "pointer",
-              }}
-            >
-              <ChevronRight style={{ width: 20, height: 20, color: "#2d5a3d" }} />
-            </button>
-
-          </div>
-
         </div>
       </section>
 
       {/* ── CONTACT & LOCATION ── */}
-      <section
-        style={{
-          minHeight: "100svh",
-          display: "flex",
-          alignItems: "center",
-          scrollSnapAlign: "start",
-          padding: "110px clamp(16px, 4vw, 24px) 40px",
-          backgroundColor: "#ffffff",
-        }}
-      >
-        <div
-          style={{
-            maxWidth: "1100px",
-            margin: "0 auto",
-            width: "100%",
-            backgroundColor: "#ffffff",
-            borderRadius: "24px",
-            boxShadow: "0 20px 50px rgba(16, 24, 40, 0.08)",
-            padding: "clamp(20px, 3vw, 32px)",
-          }}
-        >
+      <section style={{ minHeight: "100svh", display: "flex", alignItems: "center", padding: "88px 20px 40px", backgroundColor: "#ffffff" }}>
+        <div style={{ maxWidth: "1100px", width: "100%", margin: "0 auto" }}>
           <div style={{ textAlign: "center", marginBottom: "48px" }}>
             <h2
               style={{
@@ -681,8 +565,6 @@ const Index = () => {
           </div>
         </div>
       </section>
-
-      </main>
 
       <Footer />
     </div>

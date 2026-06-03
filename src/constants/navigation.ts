@@ -3,6 +3,7 @@ export const NAV_ITEMS = [
   { path: "/services", label: "Services" },
   { path: "/expertise", label: "Our Areas of Expertise" },
   { path: "/blogs", label: "Blogs" },
+  { path: "/about", label: "About Us" },
   { path: "/contact", label: "Contact" },
 ] as const;
 

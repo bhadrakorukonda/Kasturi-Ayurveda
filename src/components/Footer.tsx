@@ -5,8 +5,8 @@ import { CONTACT_INFO, NAV_ITEMS, BUSINESS_HOURS } from "@/constants/navigation"
 
 const Footer = () => {
   return (
-    <footer className="bg-[#f5f0e8] border-t border-border mt-20">
-      <div className="container mx-auto py-12 px-5 md:py-20 md:px-10">
+    <footer className="bg-secondary/30 border-t border-border mt-20">
+      <div className="container mx-auto px-4 py-12">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           <div>
             <Link to="/" className="flex items-center gap-3 mb-4">
