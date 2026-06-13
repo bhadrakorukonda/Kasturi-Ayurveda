@@ -50,7 +50,7 @@ app.use(helmet());
 // CORS configuration
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:8080',
+    origin: process.env.FRONTEND_URL || 'http://localhost:8080',
     credentials: true,
   })
 );
@@ -80,8 +80,7 @@ if (process.env.NODE_ENV === 'development') {
 // Health check endpoint
 app.get('/health', (_req: Request, res: Response) => {
   res.status(200).json({
-    status: 'success',
-    message: 'Server is running',
+    status: 'ok',
     timestamp: new Date().toISOString(),
   });
 });
