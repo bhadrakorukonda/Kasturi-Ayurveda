@@ -18,6 +18,8 @@
   "author": "Kasturi Ayurveda",
   "license": "ISC",
   "dependencies": {
+    "@types/node": "^24.13.2",
+    "@types/nodemailer": "^7.0.12",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
@@ -29,15 +31,13 @@
     "mongoose": "^9.0.0",
     "morgan": "^1.10.1",
     "nodemailer": "^7.0.10",
-    "@types/node": "^24.13.2",
-    "@types/nodemailer": "^7.0.12"
-  },
-  "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.5",
+    "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
-    "@types/morgan": "^1.9.10",
+    "@types/morgan": "^1.9.10"
+  },
+  "devDependencies": {
     "nodemon": "^3.1.11",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.3"
