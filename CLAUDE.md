@@ -2,6 +2,9 @@
 
 This file is the source of truth for the booking/payments build. Follow it exactly. If a task conflicts with this file, stop and ask instead of improvising.
 
+## Current status
+Phase 1 (security fixes) is **DONE as of 2026-11-08**. Phase 1b (cookie auth) is **DEFERRED** — see "Phases" below. Phase 2 has not been started.
+
 ## Product scope (decided)
 - ONE bookable, payable product: a **Consultation**, 30 minutes, **in-person or online**, fixed price (INR).
 - **Therapies / Panchakarma are NOT bookable or payable online.** They are informational pages. Patients book a consultation first; therapies are planned and priced there. Staff may create therapy-session appointments from the admin dashboard (pay at clinic, no online payment).
@@ -124,18 +127,17 @@ There is NO Service model. Remove the hardcoded service enum and lists used for 
 - Admin (JWT, role-checked, whitelisted-field schemas): list/update appointments, create `therapy_session`, cancel/refund, edit doctor schedule and `blockedDates`, edit Settings, view `needs_manual_refund` items
 
 ## Known bugs to fix (Phase 1)
-- `JWT_SECRET || ''` fallback in `auth.middleware.ts`
-- `admin123` default in `scripts/createAdmin.ts`
-- `PUT /appointments/:id` and `PUT /contact/:id` pass raw `req.body` to Mongoose (mass assignment)
-- Dashboard sends PATCH to a PUT-only contact route
-- `GET /appointments/:id` has no role check
-- `/dashboard` frontend route has no protected-route wrapper
-- JWT in localStorage; move to an HTTP-only secure cookie with CSRF consideration
-- Hardcoded `http://localhost:5000/api` fallbacks in `Booking.tsx` and `Dashboard.tsx`
-- `/health` should also check the MongoDB connection
+- JWT in localStorage; move to an HTTP-only secure cookie with CSRF consideration — **DEFERRED to Phase 1b** (see "Phases" below): the cookie would be cross-site today and browsers block it.
+
+## Cleanup backlog
+- Unused `CORS_ORIGIN` env var in both `.env.example` files (root and `backend/`) — `server.ts` only reads `FRONTEND_URL` for CORS; `CORS_ORIGIN` is dead and can be removed.
+- `Dashboard.tsx` keeps its own ad-hoc login/session state instead of relying solely on `ProtectedRoute`.
+- 4 pre-existing ESLint warnings in `Dashboard.tsx` (unused `User` import, missing `fetchData` dependency in a `useEffect`, two unused `error` catch bindings).
+- The login rate limiter (5 failed attempts / 15 min / IP) is only verified by manual curl testing; no automated test yet.
 
 ## Phases
-1. Security fixes and bug list above. No schema changes.
+1. Security fixes and bug list above. No schema changes. — **DONE (2026-11-08)**.
+   - **Phase 1b (cookie auth) — DEFERRED.** The frontend is on `vercel.app` and the backend on `onrender.com`, so an auth cookie is cross-site and gets blocked by browsers (SameSite/third-party cookie restrictions). Revisit only once the API is same-site — either a Vercel rewrite proxying `/api` to the Render backend, or a shared custom domain for both. Until then, keep using the JWT-in-localStorage approach and mitigate by shortening JWT expiry.
 2. Doctor + Settings models, seed script, public API; remove hardcoded doctor/service booking lists from the frontend and schema enum.
 3. New Appointment schema, `isActiveSlot` partial unique index, availability endpoint, hold expiry.
 4. Booking UI rework (mode, real slots, consent, patient token page, cancel flow). Works end to end with `PAYMENTS_ENABLED=false`.
