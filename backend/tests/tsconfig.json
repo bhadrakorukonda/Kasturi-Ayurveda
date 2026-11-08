@@ -1,0 +1,16 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    // Tests are bundled by Vitest, not run by Node's CommonJS loader, so
+    // resolve modules the way a bundler does.
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"]
+  },
+  "include": ["../src/**/*", "./**/*", "../vitest.config.mts"]
+}

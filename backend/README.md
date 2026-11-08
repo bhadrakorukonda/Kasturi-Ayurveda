@@ -37,16 +37,7 @@ npm install
 cp .env.example .env
 ```
 
-4. Update `.env` with your configuration:
-```env
-NODE_ENV=development
-PORT=5000
-MONGODB_URI=mongodb://localhost:27017/kasturi-ayurveda
-JWT_SECRET=your-secret-key
-EMAIL_HOST=smtp.gmail.com
-EMAIL_USER=your-email@gmail.com
-EMAIL_PASSWORD=your-app-password
-```
+4. Fill in `.env`. Every variable is documented in `.env.example`; the server refuses to start if a required one is missing. For local development, `EMAIL_PROVIDER=log` sends no real email. Production setup (email provider, scheduler, Google Meet) is in `../docs/SETUP_PHASE6.md`.
 
 ## 🏃 Running the Application
 
@@ -60,6 +51,14 @@ npm run dev
 npm run build
 npm start
 ```
+
+### Tests
+```bash
+npm test                 # 109 tests, ~20s; in-memory MongoDB, all external services faked
+npm run type-check       # source
+npm run type-check:tests # tests
+```
+No `.env`, database or network access needed: each test file starts its own in-memory MongoDB database and fakes Razorpay, email and Google. The first run downloads a MongoDB binary (~100 MB). CI runs the same on every push touching `backend/` (`.github/workflows/backend-tests.yml`).
 
 ## 📚 API Endpoints
 
@@ -203,19 +202,26 @@ pm2 start dist/server.js --name kasturi-backend
 
 ## 📝 Environment Variables
 
+`.env.example` is the authoritative list, with comments. Summary:
+
 | Variable | Description | Required |
 |----------|-------------|----------|
-| NODE_ENV | Environment (development/production) | Yes |
-| PORT | Server port | Yes |
+| NODE_ENV | development / production / test | default development |
+| PORT | Server port | default 5000 |
+| LOG_LEVEL | debug / info / warn / error / silent | default info |
 | MONGODB_URI | MongoDB connection string | Yes |
-| JWT_SECRET | JWT signing secret | Yes |
-| JWT_EXPIRE | JWT expiration time | Yes |
-| EMAIL_HOST | SMTP host | Yes |
-| EMAIL_PORT | SMTP port | Yes |
-| EMAIL_USER | SMTP username | Yes |
-| EMAIL_PASSWORD | SMTP password | Yes |
-| EMAIL_FROM | From email address | Yes |
-| CORS_ORIGIN | Allowed CORS origin | Yes |
+| JWT_SECRET | JWT signing secret (32+ chars) | Yes |
+| JWT_EXPIRE | JWT expiration time | default |
+| FRONTEND_URL | Frontend origin (CORS + links in emails) | Yes |
+| EMAIL_PROVIDER | resend / brevo / log (log = dev only) | Yes |
+| EMAIL_API_KEY | Provider API key | Yes (unless log) |
+| EMAIL_FROM | `Name <address>`, verified with the provider | Yes |
+| CLINIC_NOTIFY_EMAIL | Clinic inbox for new-booking notices | No |
+| CRON_SECRET | Shared with the GitHub Actions scheduler (32+ chars) | Yes |
+| PAYMENTS_ENABLED | `true` / `false` | default false |
+| RAZORPAY_KEY_ID / _KEY_SECRET / _WEBHOOK_SECRET | Razorpay (test keys outside production) | When payments on |
+| GOOGLE_CLIENT_ID / _CLIENT_SECRET / _REFRESH_TOKEN | Google Meet links | When payments on |
+| GOOGLE_CALENDAR_ID | Calendar for Meet events | default primary |
 
 ## 📄 License
 

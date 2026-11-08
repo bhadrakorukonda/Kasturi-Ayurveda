@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { env } from '../config/env';
+import { logger } from '../utils/logger';
 
 interface CustomError extends Error {
   statusCode?: number;
@@ -44,6 +45,15 @@ export const errorHandler = (
   if (err.name === 'TokenExpiredError') {
     statusCode = 401;
     message = 'Token expired';
+  }
+
+  if (statusCode >= 500) {
+    // Path only: the query string can carry a patient access token.
+    logger.error('unhandled error', { method: _req.method, path: _req.originalUrl.split('?')[0], err });
+    // Don't leak internal error messages (DB errors, etc.) to clients.
+    if (env.NODE_ENV === 'production') {
+      message = 'Something went wrong. Please try again.';
+    }
   }
 
   res.status(statusCode).json({

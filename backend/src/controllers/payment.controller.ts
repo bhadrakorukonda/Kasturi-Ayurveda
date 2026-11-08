@@ -3,6 +3,7 @@ import z from 'zod';
 import Appointment from '../models/Appointment.model';
 import { verifyWebhookSignature } from '../utils/razorpay.util';
 import { processConfirmation, runInBackground } from '../utils/notifications.util';
+import { logger } from '../utils/logger';
 
 // Only the fields we actually use. passthrough() so Razorpay adding fields
 // never breaks parsing; anything we don't recognise is simply ignored.
@@ -49,7 +50,7 @@ const handlePaymentCaptured = async (payment: PaymentEntity): Promise<string | v
   }
 
   if (!payment.order_id) {
-    console.warn(`⚠️  payment.captured ${payment.id} has no order_id; not one of ours, ignoring.`);
+    logger.warn('payment.captured without order_id, ignored', { paymentId: payment.id });
     return;
   }
 
@@ -57,9 +58,11 @@ const handlePaymentCaptured = async (payment: PaymentEntity): Promise<string | v
   if (!appointment) {
     // Money arrived that we can't match to a booking. Loud log with ids
     // only (no PII) so it can be reconciled from the Razorpay dashboard.
-    console.error(
-      `❌ payment.captured ${payment.id} for unknown order ${payment.order_id}. Reconcile manually in Razorpay.`
-    );
+    logger.error('payment captured for unknown order; reconcile in Razorpay', {
+      paymentId: payment.id,
+      orderId: payment.order_id,
+      amount: payment.amount,
+    });
     return;
   }
 
@@ -92,7 +95,7 @@ const handlePaymentCaptured = async (payment: PaymentEntity): Promise<string | v
     );
 
     if (confirmed) {
-      console.log(`✅ Appointment ${String(confirmed._id)} confirmed by payment ${payment.id}`);
+      logger.info('appointment confirmed by payment', { appointmentId: String(confirmed._id), paymentId: payment.id });
       return String(confirmed._id);
     }
   }
@@ -114,19 +117,22 @@ const handlePaymentCaptured = async (payment: PaymentEntity): Promise<string | v
   );
 
   if (flagged) {
-    console.error(
-      `❌ Payment ${payment.id} captured for appointment ${String(appointment._id)} that is no longer holding its slot` +
-        `${amountMatches ? '' : ' (amount/currency mismatch)'}. Flagged needs_manual_refund.`
-    );
+    logger.error('payment captured but booking no longer valid; flagged needs_manual_refund', {
+      appointmentId: String(appointment._id),
+      paymentId: payment.id,
+      reason: amountMatches ? 'hold_released' : 'amount_mismatch',
+    });
     return;
   }
 
   // The appointment already has a different payment recorded. Razorpay
   // shouldn't allow a second capture on a paid order, but if it happens we
   // must not overwrite the first one.
-  console.error(
-    `❌ Second payment ${payment.id} captured for order ${payment.order_id} (appointment ${String(appointment._id)}). Refund it manually in Razorpay.`
-  );
+  logger.error('second payment captured for an already-paid order; refund it in Razorpay', {
+    appointmentId: String(appointment._id),
+    paymentId: payment.id,
+    orderId: payment.order_id,
+  });
 };
 
 // payment.failed: mark it so the dashboard shows why the booking didn't go
@@ -160,7 +166,7 @@ const handleRefundFailed = async (refund: RefundEntity): Promise<void> => {
   );
 
   if (updated) {
-    console.error(`❌ Refund ${refund.id} failed for appointment ${String(updated._id)}. Flagged needs_manual_refund.`);
+    logger.error('refund failed at Razorpay; flagged needs_manual_refund', { appointmentId: String(updated._id), refundId: refund.id });
   }
 };
 

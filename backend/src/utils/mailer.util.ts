@@ -1,4 +1,5 @@
 import { env } from '../config/env';
+import { logger } from './logger';
 
 // Provider-agnostic transactional email. Switch providers with
 // EMAIL_PROVIDER (resend | brevo); both are plain HTTPS calls via the
@@ -73,10 +74,10 @@ export const sendEmail = async (email: OutgoingEmail): Promise<void> => {
     } else if (env.EMAIL_PROVIDER === 'brevo') {
       await sendViaBrevo(email);
     } else {
-      console.log(`📧 [EMAIL_PROVIDER=log] would send "${kind}" (${email.tag})`);
+      logger.info('email skipped (EMAIL_PROVIDER=log)', { kind, tag: email.tag });
       return;
     }
-    console.log(`📧 Sent "${kind}" email (${email.tag})`);
+    logger.info('email sent', { kind, tag: email.tag, provider: env.EMAIL_PROVIDER });
   } catch (error) {
     throw new Error(`Email "${email.tag}" via ${env.EMAIL_PROVIDER} failed: ${(error as Error).message}`);
   }

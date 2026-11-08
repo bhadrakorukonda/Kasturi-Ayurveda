@@ -3,7 +3,7 @@
 This file is the source of truth for the booking/payments build. Follow it exactly. If a task conflicts with this file, stop and ask instead of improvising.
 
 ## Current status
-Phase 1 (security fixes) is **DONE as of 2026-11-08**. Phase 1b (cookie auth) is **DEFERRED** — see "Phases" below. Phase 2 (Doctor + Settings models, seed script, public API) is **DONE as of 2026-11-08**. Phase 3 (new Appointment schema, `isActiveSlot` index, availability endpoint, hold expiry) is **DONE as of 2026-11-08**. Phase 4 (Booking UI rework, patient token page, cancel flow, admin dashboard fix) is **DONE as of 2026-11-08** — `Booking.tsx` and `Dashboard.tsx` now both speak the live API correctly end to end with `PAYMENTS_ENABLED=false`. Phase 5 (Razorpay orders, webhook, idempotency, refunds, behind the flag) is **DONE as of 2026-11-08**, verified against a mocked Razorpay; a run with real Razorpay TEST keys is still owed before Phase 8. Phase 6 (Google Meet links, transactional email, scheduled reminders) is **DONE as of 2026-11-08**, verified against mocked Resend/Google; **production needs the new env vars set before it is deployed** (see `docs/SETUP_PHASE6.md`). Phase 7 has not been started.
+Phase 1 (security fixes) is **DONE as of 2026-11-08**. Phase 1b (cookie auth) is **DEFERRED** — see "Phases" below. Phase 2 (Doctor + Settings models, seed script, public API) is **DONE as of 2026-11-08**. Phase 3 (new Appointment schema, `isActiveSlot` index, availability endpoint, hold expiry) is **DONE as of 2026-11-08**. Phase 4 (Booking UI rework, patient token page, cancel flow, admin dashboard fix) is **DONE as of 2026-11-08** — `Booking.tsx` and `Dashboard.tsx` now both speak the live API correctly end to end with `PAYMENTS_ENABLED=false`. Phase 5 (Razorpay orders, webhook, idempotency, refunds, behind the flag) is **DONE as of 2026-11-08**, verified against a mocked Razorpay; a run with real Razorpay TEST keys is still owed before Phase 8. Phase 6 (Google Meet links, transactional email, scheduled reminders) is **DONE as of 2026-11-08**, verified against mocked Resend/Google; **production needs the new env vars set before it is deployed** (see `docs/SETUP_PHASE6.md`). Phase 7 (automated tests, structured logging) is **DONE as of 2026-11-09**: `cd backend && npm test` runs 109 tests, also in CI on every backend push. The always-on paid instance was **deliberately deferred** (see Phases). Phase 8 (go-live) needs the clinic owner.
 
 ## Product scope (decided)
 - ONE bookable, payable product: a **Consultation**, 30 minutes, **in-person or online**, fixed price (INR).
@@ -24,7 +24,8 @@ Phase 1 (security fixes) is **DONE as of 2026-11-08**. Phase 1b (cookie auth) is
 - No new dependency without stating why. Prefer what's already installed.
 - Validate every request body server-side with zod. No raw `req.body` into Mongoose.
 - Never trust the client for price, payment status, or slot availability.
-- Never log secrets, tokens, or patient symptoms.
+- Never log secrets, tokens, or patient symptoms. Use `logger` from `backend/src/utils/logger.ts` (not `console`) in server code: pass ids as fields, never patient data. Request logs record the path only, never the query string (patient links carry `?token=`).
+- Every change to booking/payment/notification behaviour comes with tests in `backend/tests/` (`npm test`).
 - After each phase: list files changed, how to test manually, and anything left undone.
 
 ## Feature flag: PAYMENTS_ENABLED
@@ -142,7 +143,7 @@ There is NO Service model. Remove the hardcoded service enum and lists used for 
 - Unused `CORS_ORIGIN` env var in both `.env.example` files (root and `backend/`) — `server.ts` only reads `FRONTEND_URL` for CORS; `CORS_ORIGIN` is dead and can be removed.
 - `Dashboard.tsx` keeps its own ad-hoc login/session state instead of relying solely on `ProtectedRoute`.
 - 4 pre-existing ESLint warnings in `Dashboard.tsx` (unused `User` import, missing `fetchData` dependency in a `useEffect`, two unused `error` catch bindings).
-- The login rate limiter (5 failed attempts / 15 min / IP) is only verified by manual curl testing; no automated test yet.
+- ~~The login rate limiter is only verified by manual curl testing~~ — covered by `tests/auth.test.ts` since Phase 7.
 - ~~3 old-shape test documents in `appointments`~~ — deleted during Phase 4 verification; they were crashing `Dashboard.tsx` (reading `.name` off a missing `patient` sub-object on legacy docs). `Dashboard.tsx` is now defensive against missing/legacy fields regardless (falls back to `"—"`), so this class of issue can't recur even if old-shape data shows up again.
 
 ## Phases
@@ -151,24 +152,26 @@ There is NO Service model. Remove the hardcoded service enum and lists used for 
 2. Doctor + Settings models, seed script, public API; remove hardcoded doctor/service booking lists from the frontend. — **DONE (2026-11-08)**.
 3. New Appointment schema (including the service/doctor enum and lists currently still hardcoded on the old model), `isActiveSlot` partial unique index, availability endpoint, hold expiry. — **DONE (2026-11-08)**. Backend only — `Booking.tsx`/`Dashboard.tsx` are not updated and will not work correctly until Phase 4.
 4. Booking UI rework (mode, real slots, consent, patient token page, cancel flow). Works end to end with `PAYMENTS_ENABLED=false`. — **DONE (2026-11-08)**. Also fixed `Dashboard.tsx` (left broken in Phase 3) so the admin can see/manage the new-shape bookings.
-5. Razorpay order, webhook, idempotency, refunds, in TEST mode, behind the flag.
+5. Razorpay order, webhook, idempotency, refunds, in TEST mode, behind the flag. — **DONE (2026-11-08)** (mocked Razorpay; real TEST-key run still owed).
 6. Google Meet link + transactional email + scheduled reminders. — **DONE (2026-11-08)**; setup steps in `docs/SETUP_PHASE6.md`.
-7. Tests (below), move backend to an always-on paid instance, structured logging.
-8. Go-live checklist (needs the clinic owner): Razorpay KYC and live keys, flip `PAYMENTS_ENABLED=true`, one real small-value payment and refund as a smoke test.
+7. Tests (below), move backend to an always-on paid instance, structured logging. — **DONE (2026-11-09)** except the paid instance: **deferred by decision** (the 15-min GitHub Actions job keeps the free instance mostly awake; Razorpay retries webhooks to a sleeping server for 24h, so no payment is lost). Revisit if cold starts bother real patients after go-live (Render "Starter", ~$7/month).
+8. Go-live checklist (needs the clinic owner): Phase 6 env vars + GitHub secrets set (`docs/SETUP_PHASE6.md`); real Razorpay TEST-key run (Checkout, webhook, refund); Google OAuth app published and `google-auth` done as the clinic account; Razorpay KYC and live keys; flip `PAYMENTS_ENABLED=true`; one real small-value payment and refund as a smoke test; optionally the paid Render instance.
 
 ## Tests (required before go-live)
-Use Vitest/Jest with mongodb-memory-server. Must cover:
-- Two concurrent bookings for the same slot: exactly one succeeds
-- Slot outside working hours / on a blocked date / inside min notice is rejected
-- Webhook with invalid signature is rejected
-- Duplicate webhook delivery does not double-confirm
-- Webhook for an expired hold sets `needs_manual_refund` and is not lost
-- Client-supplied price/status/amount is ignored
-- Online booking without consent is rejected
-- Pay-at-clinic is rejected for online mode
-- Online mode and payment routes are rejected when `PAYMENTS_ENABLED=false`
-- Patient cancel at 24h+ refunds once; inside 24h is rejected; double cancel does not double refund
-- Token page rejects a wrong or missing token
+Vitest + mongodb-memory-server + supertest, in `backend/tests/` (`npm test`; CI: `.github/workflows/backend-tests.yml`). Outbound Razorpay/email/Google calls are faked in `tests/helpers/fakeProviders.ts`; nothing touches the network or a real DB. **All required items are covered:**
+- Two concurrent bookings for the same slot: exactly one succeeds — `booking.test.ts` (10 concurrent)
+- Slot outside working hours / on a blocked date / inside min notice is rejected — `booking.test.ts` (+ off-grid, Sunday, beyond max advance)
+- Webhook with invalid signature is rejected — `payments.test.ts` (+ missing signature, body modified after signing)
+- Duplicate webhook delivery does not double-confirm — `payments.test.ts` (5 concurrent duplicates, no second email)
+- Webhook for an expired hold sets `needs_manual_refund` and is not lost — `payments.test.ts`
+- Client-supplied price/status/amount is ignored — `booking.test.ts` (rejected outright by `.strict()`, nothing created)
+- Online booking without consent is rejected — `payments.test.ts`
+- Pay-at-clinic is rejected for online mode — `payments.test.ts`
+- Online mode and payment routes are rejected when `PAYMENTS_ENABLED=false` — `booking.test.ts`
+- Patient cancel at 24h+ refunds once; inside 24h is rejected; double cancel does not double refund — `payments.test.ts` (+ 6 concurrent cancels → one refund)
+- Token page rejects a wrong or missing token — `booking.test.ts` (+ another booking's token, rate limit)
+
+Also covered: admin refunds (idempotent, concurrent, staff forbidden, retry after failure, `refund.failed`), all Phase 6 emails/Meet/reminders/jobs (`notifications.test.ts`), startup env rules (`env.test.ts`), log redaction and no tokens in logs (`logging.test.ts`), login brute-force limiter (`auth.test.ts`). The suite was checked by deliberately breaking the signature check, the double-booking index, the refund lock and the log redaction: each break made the relevant test fail.
 
 ## Open decisions (values to fill in, ask before building)
 - Doctor name is confirmed real: **Dr. Saraswathi Sharma**, seeded as the single active doctor. Her specialization (seeded as placeholder `"General Ayurvedic Physician"`) still needs a real value.
