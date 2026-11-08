@@ -4,6 +4,28 @@ Phase-by-phase history of the booking/payments build. See [CLAUDE.md](../CLAUDE.
 
 ---
 
+## Phase 4 — Booking UI rework, patient token page, cancel flow
+**Done: 2026-11-08** · Branch: `phase-4-booking-ui`
+
+**What was built**
+- `Booking.tsx` fully reworked to match the Phase 3 API: real slots from `/api/availability` (replacing the hardcoded `timeSlots`), doctor selection now carries `doctorId` (not name), a mode selector + consent checkbox that only render when `config.modes.length > 1` (today `PAYMENTS_ENABLED=false` so only `in_person` shows, matching CLAUDE.md's "hidden in the UI" rule), calendar bounds derived from `config.maxAdvanceDays`, and a working confirmation screen with a link to the new patient page.
+- New `backend` dual-mode route: `GET /api/appointments/:id` now serves either an admin (JWT) or a patient (`?token=`) depending on which is presented, via `patientAccess.middleware.ts` (`optionalPatientToken` → `maybeAdminAuth`, composed from the existing `protect`/`authorize` as plain function calls since they already send their own response and skip `next()` on failure).
+- New `POST /api/appointments/:id/cancel?token=` (patient-only, rate-limited 30 req/15min/IP): enforces `status === 'confirmed'` and the `refundWindowHours` rule server-side: inside the window, the API itself rejects with `400`, not just the UI.
+- New `src/pages/BookingStatus.tsx` at route `/booking/:id` — shows live status/time/doctor/payment info, a Cancel button gated by a server-computed `cancellable` flag (never trust the client to compute this), with an `AlertDialog` confirmation.
+- `token.util.ts` gained `verifyPatientAccessToken` (constant-time compare via `crypto.timingSafeEqual`).
+- Confirmation emails now include a "View or cancel your booking" link with the raw token.
+- `Dashboard.tsx` fixed to the new schema (patient sub-object, populated doctor name, new status enum) — this had been left broken since Phase 3 by deliberate prior agreement; fixing it was explicitly brought into Phase 4's scope after confirming with the user.
+
+**Files touched:** `backend/src/utils/token.util.ts`, new `backend/src/middleware/patientAccess.middleware.ts`, `backend/src/controllers/appointment.controller.ts`, `backend/src/routes/appointment.routes.ts`, `backend/src/utils/email.util.ts`; `src/pages/Booking.tsx` (rework), new `src/pages/BookingStatus.tsx`, `src/App.tsx`, `src/pages/Dashboard.tsx` (fix).
+
+**Caught during verification — a real bug, not a test artifact:** the 3 old pre-Phase-3 test documents still sitting in the `appointments` collection had no `patient` sub-object, and `Dashboard.tsx`'s row rendering did `apt.patient.name` unconditionally — it crashed the whole admin dashboard (`TypeError: Cannot read properties of undefined`) the moment a legacy document appeared in the list. Fixed two ways: made the table defensive against missing/legacy fields (`apt.patient?.name ?? "—"`, etc., can't recur), and deleted those 3 confirmed-disposable test documents (per the user's Phase 3 confirmation that the collection held no real bookings).
+
+**How this was verified:** full browser-driven run via Playwright (no project run-skill existed yet, so one was improvised with the project's actual dev servers — `npm run dev` on both sides — rather than curl alone, since this was a UI-heavy phase). Confirmed: real-slot booking end to end → `201`; the resulting manage link renders correct status/doctor/time; a near-term booking (<24h out) correctly hides the Cancel button and shows the "too close to cancel online" message; a far-future booking's Cancel button works and actually cancels (slot freed); a tampered token on the manage link gets a clean `403`; the admin dashboard renders all of the above with the right fields after the bug fix above.
+
+**Left undone (by design):** Razorpay (Phase 5) — the `online`/`consentAccepted` code path is built and will take effect once `PAYMENTS_ENABLED=true`, but isn't end-to-end testable until Phase 5 adds order creation; Google Meet link, Resend/Brevo email provider switch, scheduled reminders (Phase 6); admin `therapy_session` creation UI; automated test suite (Phase 7).
+
+---
+
 ## Phase 3 — New Appointment schema, availability endpoint, hold expiry
 **Done: 2026-11-08** · Branch: `phase-3-appointment-schema`
 

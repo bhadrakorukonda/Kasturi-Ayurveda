@@ -27,15 +27,21 @@ import { API_URL } from "@/lib/api";
 
 interface Appointment {
   _id: string;
-  name: string;
-  email?: string;
-  phone: string;
-  service: string;
-  preferredDoctor: string;
-  appointmentDate: string;
-  appointmentTime: string;
-  symptoms?: string;
-  status: "pending" | "confirmed" | "cancelled" | "completed";
+  doctorId?: { _id: string; name: string; specialization?: string } | string;
+  slotStart: string;
+  slotEnd: string;
+  mode: "in_person" | "online";
+  paymentMode: "pay_now" | "pay_at_clinic";
+  paymentStatus: "unpaid" | "paid" | "refunded" | "failed" | "needs_manual_refund";
+  // Optional: pre-Phase-3 legacy documents don't have this sub-object.
+  patient?: {
+    name: string;
+    phone: string;
+    email?: string;
+    age?: number;
+    symptoms?: string;
+  };
+  status: "pending_payment" | "confirmed" | "completed" | "cancelled" | "no_show";
   createdAt: string;
 }
 
@@ -50,6 +56,35 @@ interface ContactMessage {
   createdAt: string;
 }
 
+const formatSlotIST = (iso?: string): { date: string; time: string } => {
+  if (!iso) return { date: "—", time: "—" };
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { date: "—", time: "—" };
+  return {
+    date: d.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }),
+    time: d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" }),
+  };
+};
+
+const getDoctorName = (doctorId: Appointment["doctorId"]): string => {
+  if (doctorId && typeof doctorId === "object") return doctorId.name;
+  return "—";
+};
+
+const appointmentStatusBadgeVariant = (status: Appointment["status"]) => {
+  switch (status) {
+    case "confirmed":
+      return "default" as const;
+    case "completed":
+      return "outline" as const;
+    case "cancelled":
+    case "no_show":
+      return "destructive" as const;
+    default:
+      return "secondary" as const;
+  }
+};
+
 const Dashboard = () => {
   const { toast } = useToast();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -60,8 +95,8 @@ const Dashboard = () => {
   const [contacts, setContacts] = useState<ContactMessage[]>([]);
   const [stats, setStats] = useState({
     totalAppointments: 0,
-    pendingAppointments: 0,
     confirmedAppointments: 0,
+    completedAppointments: 0,
     newMessages: 0
   });
 
@@ -87,14 +122,14 @@ const Dashboard = () => {
         const appointmentsData = await appointmentsRes.json();
         setAppointments(appointmentsData.data || []);
         
-        const pending = appointmentsData.data?.filter((a: Appointment) => a.status === "pending").length || 0;
         const confirmed = appointmentsData.data?.filter((a: Appointment) => a.status === "confirmed").length || 0;
-        
+        const completed = appointmentsData.data?.filter((a: Appointment) => a.status === "completed").length || 0;
+
         setStats(prev => ({
           ...prev,
           totalAppointments: appointmentsData.data?.length || 0,
-          pendingAppointments: pending,
-          confirmedAppointments: confirmed
+          confirmedAppointments: confirmed,
+          completedAppointments: completed
         }));
       }
 
@@ -293,8 +328,8 @@ const Dashboard = () => {
                     <Clock className="w-6 h-6 text-yellow-600" />
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Pending</p>
-                    <p className="text-2xl font-bold">{stats.pendingAppointments}</p>
+                    <p className="text-sm text-muted-foreground">Confirmed</p>
+                    <p className="text-2xl font-bold">{stats.confirmedAppointments}</p>
                   </div>
                 </div>
               </CardContent>
@@ -307,8 +342,8 @@ const Dashboard = () => {
                     <FileText className="w-6 h-6 text-green-600" />
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Confirmed</p>
-                    <p className="text-2xl font-bold">{stats.confirmedAppointments}</p>
+                    <p className="text-sm text-muted-foreground">Completed</p>
+                    <p className="text-2xl font-bold">{stats.completedAppointments}</p>
                   </div>
                 </div>
               </CardContent>
@@ -344,9 +379,10 @@ const Dashboard = () => {
                     <TableRow>
                       <TableHead>Patient</TableHead>
                       <TableHead>Contact</TableHead>
-                      <TableHead>Service</TableHead>
+                      <TableHead>Mode</TableHead>
                       <TableHead>Doctor</TableHead>
                       <TableHead>Date & Time</TableHead>
+                      <TableHead>Payment</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
@@ -354,48 +390,48 @@ const Dashboard = () => {
                   <TableBody>
                     {appointments.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground">
+                        <TableCell colSpan={8} className="text-center text-muted-foreground">
                           No appointments found
                         </TableCell>
                       </TableRow>
                     ) : (
-                      appointments.map((apt) => (
+                      appointments.map((apt) => {
+                        const slot = formatSlotIST(apt.slotStart);
+                        return (
                         <TableRow key={apt._id}>
-                          <TableCell className="font-medium">{apt.name}</TableCell>
+                          <TableCell className="font-medium">{apt.patient?.name ?? "—"}</TableCell>
                           <TableCell>
                             <div className="text-sm">
                               <div className="flex items-center gap-1">
                                 <Phone className="w-3 h-3" />
-                                {apt.phone}
+                                {apt.patient?.phone ?? "—"}
                               </div>
-                              {apt.email && (
+                              {apt.patient?.email && (
                                 <div className="flex items-center gap-1 text-muted-foreground">
                                   <Mail className="w-3 h-3" />
-                                  {apt.email}
+                                  {apt.patient.email}
                                 </div>
                               )}
                             </div>
                           </TableCell>
-                          <TableCell>{apt.service}</TableCell>
-                          <TableCell>{apt.preferredDoctor}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{apt.mode === "online" ? "Online" : "In-person"}</Badge>
+                          </TableCell>
+                          <TableCell>{getDoctorName(apt.doctorId)}</TableCell>
                           <TableCell>
                             <div className="text-sm">
-                              <div>{new Date(apt.appointmentDate).toLocaleDateString()}</div>
-                              <div className="text-muted-foreground">{apt.appointmentTime}</div>
+                              <div>{slot.date}</div>
+                              <div className="text-muted-foreground">{slot.time}</div>
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge
-                              variant={
-                                apt.status === "confirmed"
-                                  ? "default"
-                                  : apt.status === "pending"
-                                  ? "secondary"
-                                  : apt.status === "completed"
-                                  ? "outline"
-                                  : "destructive"
-                              }
-                            >
+                            <div className="text-sm">
+                              <div>{apt.paymentMode === "pay_at_clinic" ? "Pay at clinic" : "Pay now"}</div>
+                              <div className="text-muted-foreground">{apt.paymentStatus}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={appointmentStatusBadgeVariant(apt.status)}>
                               {apt.status}
                             </Badge>
                           </TableCell>
@@ -408,15 +444,16 @@ const Dashboard = () => {
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="pending">Pending</SelectItem>
                                 <SelectItem value="confirmed">Confirmed</SelectItem>
                                 <SelectItem value="completed">Completed</SelectItem>
                                 <SelectItem value="cancelled">Cancelled</SelectItem>
+                                <SelectItem value="no_show">No Show</SelectItem>
                               </SelectContent>
                             </Select>
                           </TableCell>
                         </TableRow>
-                      ))
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>

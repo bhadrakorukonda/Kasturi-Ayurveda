@@ -3,12 +3,37 @@ import mongoose from 'mongoose';
 import z from 'zod';
 import Appointment, { IAppointment } from '../models/Appointment.model';
 import Doctor from '../models/Doctor.model';
-import { getSettings } from '../models/Settings.model';
+import { getSettings, ISettings } from '../models/Settings.model';
 import { sendAppointmentConfirmation } from '../utils/email.util';
 import { generateDaySlots, isSlotWithinBookingWindow, utcToISTDateString } from '../utils/slots.util';
 import { expireStaleHolds } from '../utils/holdExpiry.util';
 import { generatePatientAccessToken } from '../utils/token.util';
 import { PAYMENTS_ENABLED } from '../config/env';
+import { PatientRequest } from '../middleware/patientAccess.middleware';
+
+// Patient-facing view: deliberately omits patient.phone/email/symptoms
+// (the token holder already has their own contact info, no need to echo
+// it back) and accessTokenHash. appointment.doctorId must be populated.
+const toPatientSafeView = (appointment: any, settings: ISettings) => {
+  const hoursUntilSlot = (new Date(appointment.slotStart).getTime() - Date.now()) / (1000 * 60 * 60);
+  const cancellable = appointment.status === 'confirmed' && hoursUntilSlot >= settings.refundWindowHours;
+
+  return {
+    id: appointment._id,
+    doctorName: appointment.doctorId?.name,
+    specialization: appointment.doctorId?.specialization,
+    slotStart: appointment.slotStart,
+    slotEnd: appointment.slotEnd,
+    mode: appointment.mode,
+    paymentMode: appointment.paymentMode,
+    status: appointment.status,
+    amountDue: appointment.amountDue,
+    currency: appointment.currency,
+    meetLink: appointment.meetLink,
+    patientName: appointment.patient?.name,
+    cancellable,
+  };
+};
 
 const isObjectId = (value: string) => mongoose.Types.ObjectId.isValid(value);
 
@@ -136,7 +161,7 @@ export const createAppointment = async (
     }
 
     try {
-      await sendAppointmentConfirmation(appointment);
+      await sendAppointmentConfirmation(appointment, token);
     } catch (emailError) {
       console.error('Email sending failed:', emailError);
       // Don't fail the request if email fails
@@ -183,6 +208,7 @@ export const getAllAppointments = async (
     }
 
     const appointments = await Appointment.find(query)
+      .populate('doctorId', 'name specialization')
       .sort({ slotStart: 1 })
       .limit(Number(limit))
       .skip((Number(page) - 1) * Number(limit));
@@ -204,16 +230,23 @@ export const getAllAppointments = async (
   }
 };
 
-// @desc    Get single appointment
+// @desc    Get single appointment — patient (via ?token=) or admin/staff (via JWT)
 // @route   GET /api/appointments/:id
-// @access  Private
+// @access  Dual: public+token, or Private (Admin/Staff)
 export const getAppointment = async (
-  req: Request,
+  req: PatientRequest,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const appointment = await Appointment.findById(req.params.id);
+    if (req.patientAppointment) {
+      const populated = await req.patientAppointment.populate('doctorId', 'name specialization');
+      const settings = await getSettings();
+      res.status(200).json({ status: 'success', data: toPatientSafeView(populated, settings) });
+      return;
+    }
+
+    const appointment = await Appointment.findById(req.params.id).populate('doctorId', 'name specialization');
 
     if (!appointment) {
       res.status(404).json({
@@ -226,6 +259,62 @@ export const getAppointment = async (
     res.status(200).json({
       status: 'success',
       data: appointment,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Patient cancels their own appointment
+// @route   POST /api/appointments/:id/cancel?token=
+// @access  Public, token-gated
+export const cancelAppointment = async (
+  req: PatientRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const appointment = req.patientAppointment as IAppointment;
+
+    if (appointment.status !== 'confirmed') {
+      res.status(400).json({ status: 'error', message: 'This appointment cannot be cancelled.' });
+      return;
+    }
+
+    const settings = await getSettings();
+    const hoursUntilSlot = (appointment.slotStart.getTime() - Date.now()) / (1000 * 60 * 60);
+
+    if (hoursUntilSlot < settings.refundWindowHours) {
+      res.status(400).json({
+        status: 'error',
+        message: `Cancellations within ${settings.refundWindowHours} hours of the appointment aren't allowed online. Please call the clinic.`,
+      });
+      return;
+    }
+
+    const update: Record<string, unknown> = {
+      status: 'cancelled',
+      cancelledAt: new Date(),
+      cancelledBy: 'patient',
+    };
+
+    // Not reachable yet (online/pay_now is blocked while PAYMENTS_ENABLED=false),
+    // but defensive for Phase 5: never silently cancel a paid booking without
+    // a refund actually happening — flag it for manual handling instead.
+    if (appointment.paymentStatus === 'paid') {
+      update.paymentStatus = 'needs_manual_refund';
+    }
+
+    const updated = await Appointment.findByIdAndUpdate(
+      appointment._id,
+      { $set: update, $unset: { isActiveSlot: '' } },
+      { new: true, runValidators: true }
+    ).populate('doctorId', 'name specialization');
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Appointment cancelled',
+      data: toPatientSafeView(updated, settings),
     });
   } catch (error) {
     next(error);
