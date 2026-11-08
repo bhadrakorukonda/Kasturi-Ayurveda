@@ -50,6 +50,7 @@ interface Appointment {
   amountPaid?: number;
   amountRefunded?: number;
   razorpayPaymentId?: string;
+  meetLink?: string;
   // Optional: pre-Phase-3 legacy documents don't have this sub-object.
   patient?: {
     name: string;
@@ -541,6 +542,14 @@ const Dashboard = () => {
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline">{apt.mode === "online" ? "Online" : "In-person"}</Badge>
+                            {apt.mode === "online" && apt.meetLink && (
+                              <a href={apt.meetLink} target="_blank" rel="noreferrer" className="block text-xs text-primary underline mt-1">
+                                Meet link
+                              </a>
+                            )}
+                            {apt.mode === "online" && !apt.meetLink && apt.status === "confirmed" && (
+                              <span className="block text-xs text-destructive mt-1">No Meet link yet (retrying)</span>
+                            )}
                           </TableCell>
                           <TableCell>{getDoctorName(apt.doctorId)}</TableCell>
                           <TableCell>

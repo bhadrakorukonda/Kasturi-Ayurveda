@@ -3,7 +3,7 @@
 This file is the source of truth for the booking/payments build. Follow it exactly. If a task conflicts with this file, stop and ask instead of improvising.
 
 ## Current status
-Phase 1 (security fixes) is **DONE as of 2026-11-08**. Phase 1b (cookie auth) is **DEFERRED** — see "Phases" below. Phase 2 (Doctor + Settings models, seed script, public API) is **DONE as of 2026-11-08**. Phase 3 (new Appointment schema, `isActiveSlot` index, availability endpoint, hold expiry) is **DONE as of 2026-11-08**. Phase 4 (Booking UI rework, patient token page, cancel flow, admin dashboard fix) is **DONE as of 2026-11-08** — `Booking.tsx` and `Dashboard.tsx` now both speak the live API correctly end to end with `PAYMENTS_ENABLED=false`. Phase 5 (Razorpay orders, webhook, idempotency, refunds, behind the flag) is **DONE as of 2026-11-08**, verified against a mocked Razorpay; a run with real Razorpay TEST keys is still owed before Phase 8. Phase 6 has not been started.
+Phase 1 (security fixes) is **DONE as of 2026-11-08**. Phase 1b (cookie auth) is **DEFERRED** — see "Phases" below. Phase 2 (Doctor + Settings models, seed script, public API) is **DONE as of 2026-11-08**. Phase 3 (new Appointment schema, `isActiveSlot` index, availability endpoint, hold expiry) is **DONE as of 2026-11-08**. Phase 4 (Booking UI rework, patient token page, cancel flow, admin dashboard fix) is **DONE as of 2026-11-08** — `Booking.tsx` and `Dashboard.tsx` now both speak the live API correctly end to end with `PAYMENTS_ENABLED=false`. Phase 5 (Razorpay orders, webhook, idempotency, refunds, behind the flag) is **DONE as of 2026-11-08**, verified against a mocked Razorpay; a run with real Razorpay TEST keys is still owed before Phase 8. Phase 6 (Google Meet links, transactional email, scheduled reminders) is **DONE as of 2026-11-08**, verified against mocked Resend/Google; **production needs the new env vars set before it is deployed** (see `docs/SETUP_PHASE6.md`). Phase 7 has not been started.
 
 ## Product scope (decided)
 - ONE bookable, payable product: a **Consultation**, 30 minutes, **in-person or online**, fixed price (INR).
@@ -72,6 +72,8 @@ There is NO Service model. Remove the hardcoded service enum and lists used for 
 - `accessTokenHash` (see Patient access)
 - `cancelledAt`, `cancelledBy` (`patient` | `admin` | `system`)
 - `refundLockedAt` (internal, Phase 5: set only while a Razorpay refund call is in flight; prevents double refunds)
+- `additionalAccessTokenHashes` (Phase 6: hashes of per-email tokens), `googleEventId` (Phase 6: calendar event id, equals the appointment id)
+- `confirmationPending`, `notifyLockedAt`, `reminderSentAt` (internal, Phase 6: notification bookkeeping so confirmations/reminders are retried and never double-sent)
 - timestamps
 
 ### Indexes (critical)
@@ -110,9 +112,10 @@ There is NO Service model. Remove the hardcoded service enum and lists used for 
 - The link is sent by email and shown on the tokenized booking page.
 
 ## Email
-- Do NOT use Gmail SMTP / App Passwords. Use a transactional email provider (Resend or Brevo; pick one in Phase 6) with a proper sender address.
-- Emails: booking confirmation (with Meet link if online), 24h reminder, cancellation, refund notice. Minimal PII, no symptoms in email bodies.
-- Reminders require a scheduler: use a Render cron job or equivalent. The free web tier sleeps, so do not rely on in-process timers.
+- Do NOT use Gmail SMTP / App Passwords. Use a transactional email provider with a proper sender address. **Decided (Phase 6): both Resend and Brevo are supported, selected by `EMAIL_PROVIDER`; which one is used is a deployment choice** (see `docs/SETUP_PHASE6.md`). `EMAIL_PROVIDER=log` exists for local dev only and is refused in production.
+- Emails: booking confirmation (with Meet link if online), 24h reminder, cancellation, refund notice. Minimal PII, no symptoms in email bodies. Also: no phone/age in any email; clinic notifications (`CLINIC_NOTIFY_EMAIL`) say only "see the dashboard"; contact-form emails don't echo the message.
+- Reminders require a scheduler. **Decided (Phase 6): GitHub Actions** (`.github/workflows/scheduled-jobs.yml`) calls `POST /api/jobs/run` every 15 min with `CRON_SECRET`. The free web tier sleeps, so do not rely on in-process timers.
+- Each email that needs the manage link mints a fresh token (only its hash is stored, in `additionalAccessTokenHashes`, last 10 kept). The raw token is never stored.
 
 ## Patient access (no patient accounts)
 - No patient login. On booking, generate a random token, store only its hash, include the raw token in links: `/booking/:id?token=...`.
@@ -127,6 +130,7 @@ There is NO Service model. Remove the hardcoded service enum and lists used for 
 - `POST /api/appointments/:id/refund` (admin, full refund, idempotent) — **LIVE (Phase 5)**.
 - `GET /api/appointments/:id?token=` (dual-mode: patient via token, or admin via JWT — same route) and `POST /api/appointments/:id/cancel?token=` (patient, token-gated, rate-limited) — **LIVE (Phase 4)**. Patient-facing page at `/booking/:id?token=...` (`BookingStatus.tsx`) consumes both.
 - `POST /api/payments/webhook` (only when PAYMENTS_ENABLED) — **LIVE (Phase 5)**: handles `payment.captured`, `payment.failed`, `refund.failed`.
+- `POST /api/jobs/run` (scheduler only, `Authorization: Bearer <CRON_SECRET>`) — **LIVE (Phase 6)**: expires holds, retries pending confirmations and Meet links, sends 24h reminders.
 - Admin `therapy_session` creation — not built (not assigned to a phase yet, raise it if needed).
 - `PUT /api/doctors/:id/schedule`, `PUT /api/settings`, `GET /api/doctors/admin` — **LIVE (Phase 2)**.
 
@@ -134,6 +138,7 @@ There is NO Service model. Remove the hardcoded service enum and lists used for 
 - JWT in localStorage; move to an HTTP-only secure cookie with CSRF consideration — **DEFERRED to Phase 1b** (see "Phases" below): the cookie would be cross-site today and browsers block it.
 
 ## Cleanup backlog
+- **Security rule violation (found in Phase 6, not fixed):** `contact.controller.ts` does `Contact.create(req.body)`, raw body into Mongoose, validated by express-validator but not whitelisted. Should be a zod `.strict()` schema like the rest.
 - Unused `CORS_ORIGIN` env var in both `.env.example` files (root and `backend/`) — `server.ts` only reads `FRONTEND_URL` for CORS; `CORS_ORIGIN` is dead and can be removed.
 - `Dashboard.tsx` keeps its own ad-hoc login/session state instead of relying solely on `ProtectedRoute`.
 - 4 pre-existing ESLint warnings in `Dashboard.tsx` (unused `User` import, missing `fetchData` dependency in a `useEffect`, two unused `error` catch bindings).
@@ -147,7 +152,7 @@ There is NO Service model. Remove the hardcoded service enum and lists used for 
 3. New Appointment schema (including the service/doctor enum and lists currently still hardcoded on the old model), `isActiveSlot` partial unique index, availability endpoint, hold expiry. — **DONE (2026-11-08)**. Backend only — `Booking.tsx`/`Dashboard.tsx` are not updated and will not work correctly until Phase 4.
 4. Booking UI rework (mode, real slots, consent, patient token page, cancel flow). Works end to end with `PAYMENTS_ENABLED=false`. — **DONE (2026-11-08)**. Also fixed `Dashboard.tsx` (left broken in Phase 3) so the admin can see/manage the new-shape bookings.
 5. Razorpay order, webhook, idempotency, refunds, in TEST mode, behind the flag.
-6. Google Meet link + transactional email + scheduled reminders.
+6. Google Meet link + transactional email + scheduled reminders. — **DONE (2026-11-08)**; setup steps in `docs/SETUP_PHASE6.md`.
 7. Tests (below), move backend to an always-on paid instance, structured logging.
 8. Go-live checklist (needs the clinic owner): Razorpay KYC and live keys, flip `PAYMENTS_ENABLED=true`, one real small-value payment and refund as a smoke test.
 
@@ -170,6 +175,6 @@ Use Vitest/Jest with mongodb-memory-server. Must cover:
 - Her actual working windows and weekly days off — seeded as placeholders: Mon–Sat (`workingDays: [1,2,3,4,5,6]`), windows `10:00–14:00` and `17:00–21:00` IST. Awaiting her real schedule.
 - The consultation price (paise, set via Settings, not hardcoded) — seeded as a placeholder (`INR: 50000` = ₹500). Awaiting the clinic owner's real number.
 - `minNoticeMins` and `maxAdvanceDays` — seeded as placeholders (120 mins, 30 days).
-- Which transactional email provider (Resend or Brevo)
-- (Phase 6) How the `pay_now` confirmation email gets the patient's manage link: only `accessTokenHash` is stored, so the webhook can't rebuild `/booking/:id?token=...`. Options: send the link at booking time (before payment), or store the token encrypted (reversible). Decide before building Phase 6.
+- Which transactional email provider to actually sign up for (code supports both; depends on whether we can add DNS records for the clinic's domain; see `docs/SETUP_PHASE6.md`).
+- The clinic's Google account for Meet (a regular Gmail account was chosen; it must do the one-time `npm run google-auth` sign-in).
 - Razorpay account type / KYC path (deferred to Phase 8)

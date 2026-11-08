@@ -4,7 +4,7 @@ import z from 'zod';
 import Appointment, { IAppointment } from '../models/Appointment.model';
 import Doctor from '../models/Doctor.model';
 import { getSettings, ISettings } from '../models/Settings.model';
-import { sendAppointmentConfirmation } from '../utils/email.util';
+import { notifyCancellation, notifyRefund, processConfirmation, runInBackground } from '../utils/notifications.util';
 import { generateDaySlots, isSlotWithinBookingWindow, utcToISTDateString } from '../utils/slots.util';
 import { expireStaleHolds } from '../utils/holdExpiry.util';
 import { generatePatientAccessToken } from '../utils/token.util';
@@ -174,6 +174,9 @@ export const createAppointment = async (
         status: isPayNow ? 'pending_payment' : 'confirmed',
         holdExpiresAt: isPayNow ? new Date(Date.now() + settings.holdMinutes * 60 * 1000) : undefined,
         isActiveSlot: true,
+        // pay_at_clinic is confirmed now, so its email is due now; pay_now
+        // gets this flag from the webhook when the payment is captured.
+        confirmationPending: isPayNow ? undefined : true,
         patient,
         consentAcceptedAt: mode === 'online' ? new Date() : undefined,
         accessTokenHash: hash,
@@ -241,13 +244,6 @@ export const createAppointment = async (
       return;
     }
 
-    try {
-      await sendAppointmentConfirmation(appointment, token);
-    } catch (emailError) {
-      console.error('Email sending failed:', emailError);
-      // Don't fail the request if email fails
-    }
-
     res.status(201).json({
       status: 'success',
       message: 'Appointment created successfully',
@@ -263,6 +259,11 @@ export const createAppointment = async (
         accessToken: token,
       },
     });
+
+    // After responding: confirmation email (+ clinic notification). If it
+    // fails, the scheduled job retries (confirmationPending stays set).
+    const createdId = appointment._id;
+    runInBackground('confirmation', () => processConfirmation(createdId, token));
   } catch (error) {
     next(error);
   }
@@ -402,6 +403,9 @@ export const cancelAppointment = async (
       refund: refundOutcomeLabel(refundResult),
       data: toPatientSafeView(updated, settings),
     });
+
+    const refundNote = refundOutcomeLabel(refundResult);
+    runInBackground('cancellation', () => notifyCancellation(cancelled._id, refundNote));
   } catch (error) {
     next(error);
   }
@@ -503,6 +507,14 @@ export const updateAppointment = async (
       refund: refundOutcomeLabel(refundResult),
       data: appointment,
     });
+
+    // Only a booking the patient was told about gets a cancellation email
+    // (not an unpaid hold that was never confirmed).
+    if (status === 'cancelled' && existing.status === 'confirmed') {
+      const refundNote = refundOutcomeLabel(refundResult);
+      const cancelledId = appointment._id;
+      runInBackground('cancellation', () => notifyCancellation(cancelledId, refundNote));
+    }
   } catch (error) {
     next(error);
   }
@@ -547,6 +559,9 @@ export const refundAppointmentAdmin = async (
     }
 
     res.status(200).json({ status: 'success', message: 'Refund issued', data: result.appointment });
+
+    const refundedId = result.appointment._id;
+    runInBackground('refund-notice', () => notifyRefund(refundedId));
   } catch (error) {
     next(error);
   }

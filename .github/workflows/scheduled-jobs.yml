@@ -1,0 +1,44 @@
+# Runs the backend's scheduled work every 15 minutes: expire unpaid slot
+# holds, retry pending confirmation emails / Meet links, send 24h reminders.
+#
+# Needs two repository secrets (Settings -> Secrets and variables -> Actions):
+#   BACKEND_URL  e.g. https://kasturi-ayurveda-api.onrender.com  (no trailing slash, no /api)
+#   CRON_SECRET  same value as the backend's CRON_SECRET env var
+#
+# Notes:
+# - GitHub may start scheduled runs a few minutes late; reminders don't
+#   need to-the-minute timing.
+# - Render's free tier sleeps; the first request wakes it (~1 min), hence
+#   the long timeout and retries.
+# - GitHub pauses scheduled workflows after 60 days with no repository
+#   activity. If reminders stop, re-enable it under the Actions tab.
+name: Scheduled jobs
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: scheduled-jobs
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Call POST /api/jobs/run
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$BACKEND_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "BACKEND_URL / CRON_SECRET secrets are not set; skipping."
+            exit 0
+          fi
+          curl --fail-with-body --silent --show-error \
+            --max-time 150 --retry 3 --retry-delay 20 --retry-all-errors \
+            -X POST "$BACKEND_URL/api/jobs/run" \
+            -H "Authorization: Bearer $CRON_SECRET"
+          echo

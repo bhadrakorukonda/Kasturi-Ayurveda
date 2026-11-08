@@ -29,9 +29,14 @@ export interface IAppointment extends Document {
   razorpayRefundId?: string;
   refundLockedAt?: Date;
   meetLink?: string;
+  googleEventId?: string;
   patient: IPatient;
   consentAcceptedAt?: Date;
   accessTokenHash: string;
+  additionalAccessTokenHashes?: string[];
+  confirmationPending?: boolean;
+  notifyLockedAt?: Date;
+  reminderSentAt?: Date;
   cancelledAt?: Date;
   cancelledBy?: 'patient' | 'admin' | 'system';
   createdAt: Date;
@@ -173,6 +178,30 @@ const appointmentSchema = new Schema<IAppointment>(
       type: String,
       required: [true, 'accessTokenHash is required'],
     },
+    // Hashes of extra tokens minted for later emails (confirmation after
+    // payment, reminder): the raw token is never stored, so each email gets
+    // its own. All of them open the same booking. Capped (see token.util).
+    additionalAccessTokenHashes: {
+      type: [String],
+      default: undefined,
+    },
+    googleEventId: {
+      type: String,
+    },
+    // Set when a booking becomes confirmed and its confirmation work (Meet
+    // link + email) hasn't been done yet; unset once done. The scheduled
+    // job retries anything left pending.
+    confirmationPending: {
+      type: Boolean,
+    },
+    // Internal: claim lock for notification work so the request path and
+    // the scheduled job never both send the same email.
+    notifyLockedAt: {
+      type: Date,
+    },
+    reminderSentAt: {
+      type: Date,
+    },
     cancelledAt: {
       type: Date,
     },
@@ -198,5 +227,7 @@ appointmentSchema.index({ razorpayPaymentId: 1 }, { unique: true, sparse: true }
 appointmentSchema.index({ razorpayOrderId: 1 }, { unique: true, sparse: true });
 appointmentSchema.index({ razorpayRefundId: 1 }, { sparse: true });
 appointmentSchema.index({ paymentStatus: 1 });
+appointmentSchema.index({ confirmationPending: 1 }, { sparse: true });
+appointmentSchema.index({ status: 1, slotStart: 1 });
 
 export default mongoose.model<IAppointment>('Appointment', appointmentSchema);
