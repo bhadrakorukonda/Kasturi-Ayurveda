@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { env } from '../config/env';
 import { runScheduledJobs } from '../utils/notifications.util';
+import { logger } from '../utils/logger';
 
 // Hash both sides so the constant-time compare works on equal lengths.
 const secretMatches = (provided: string): boolean => {
@@ -25,7 +26,7 @@ export const runJobs = async (req: Request, res: Response, next: NextFunction): 
 
     const started = Date.now();
     const result = await runScheduledJobs();
-    console.log(`⏰ Scheduled jobs ran in ${Date.now() - started}ms: ${JSON.stringify(result)}`);
+    logger.info('scheduled jobs ran', { durationMs: Date.now() - started, ...result });
     res.status(200).json({ status: 'success', data: result });
   } catch (error) {
     next(error);

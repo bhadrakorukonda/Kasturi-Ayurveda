@@ -4,6 +4,31 @@ Phase-by-phase history of the booking/payments build. See [CLAUDE.md](../CLAUDE.
 
 ---
 
+## Phase 7 — Automated tests, structured logging (paid instance deferred)
+**Done: 2026-11-09** · Branch: `phase-7-tests-logging`
+
+**Decided with the user:** the always-on paid Render instance is **not** done now. It isn't essential: the 15-minute GitHub Actions job keeps the free instance mostly awake, and Razorpay retries webhooks for 24h. It's an optional item on the go-live checklist.
+
+**What was built**
+- **Test suite:** Vitest + mongodb-memory-server + supertest, all dev-only. **109 tests in 6 files**, ~21s, run with `cd backend && npm test`. Each file gets a fresh in-memory database and sets its own env, so payments can be on or off per file. Razorpay, Resend and Google are faked in-process (`tests/helpers/fakeProviders.ts`), and any other outbound call throws. Each request gets a random client IP so per-IP rate limits only trigger in the tests that target them. Every required test in CLAUDE.md is covered; the mapping is in CLAUDE.md → Tests.
+- **The tests were tested:** I deliberately broke the webhook signature check, the double-booking unique index, the refund in-flight lock, and the log query-string stripping. Each break made the matching test fail. (Removing the redundant `razorpayRefundId` guard alone did *not*, correctly, because the `paymentStatus` guard already covers it.)
+- **CI:** `.github/workflows/backend-tests.yml` runs type-checks + tests on every push/PR touching `backend/`. No secrets needed.
+- **Structured logging** (`utils/logger.ts`, no dependency): JSON lines in production, readable locally, silent in tests (`LOG_LEVEL` overrides). Sensitive keys (`token`, `authorization`, `*secret`, `email`, `phone`, `patient`, …) are redacted at any depth as a safety net. All server `console.*` calls were converted to fields (`appointmentId`, `paymentId`, …); CLI scripts keep `console`.
+- **Request logging** (`middleware/requestLogger.middleware.ts`) replaces `morgan`: method, path, status, duration, request id (also returned as `X-Request-Id`). No IP.
+- **Refactor:** `app.ts` (`createApp()`) split out of `server.ts` so tests can load the app without a DB connection or a listening port. `config/env.ts` now exposes a pure `validateEnv()` that the tests use.
+
+**Real problems found and fixed on the way**
+1. **Patient access tokens were being written to the production logs.** `morgan`'s formats log the full URL, including `/api/appointments/:id?token=…`, since Phase 4. The new request logger logs the path only, and a test now guards it. Existing Render logs from before this deploy may still contain tokens. Each token only opens that one booking's status/cancel page, but treat old logs as sensitive.
+2. **8 vulnerabilities in production dependencies (1 critical, 7 high),** all pre-existing: `jws` HMAC verification (under JWT auth), `proxy-addr` IP spoofing and an `express-rate-limit` bypass (we rely on per-IP limits), a `mongoose` NoSQL-injection-class issue, plus `body-parser`, `path-to-regexp`, `lodash`, `ip-address`. Fixed with `npm audit fix`: in-range patch/minor updates only, no `package.json` range changes. Now **0 vulnerabilities**; full suite re-run green.
+3. **Unexpected 5xx errors were never logged, and their raw internal message went back to the client.** Now logged server-side (path only); production clients get a generic message.
+4. **Express 5 `app.listen` callback also fires on failure,** so the server would log "server started" even when the port was taken. Fixed.
+
+**Removed:** `morgan` + `@types/morgan` (replaced).
+
+**Not done:** paid instance (deferred, above). Frontend tests (none exist; the frontend is a thin client over the now well-tested API). The contact form's raw `req.body` is still in the CLAUDE.md backlog.
+
+---
+
 ## Phase 6 — Google Meet links, transactional email, scheduled reminders
 **Done: 2026-11-08** · Branch: `phase-6-meet-email`
 

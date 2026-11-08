@@ -12,6 +12,7 @@ import {
   RefundNote,
 } from './email.util';
 import { expireStaleHolds } from './holdExpiry.util';
+import { logger } from './logger';
 
 // Everything slow or flaky that happens AFTER a booking changes state:
 // Meet links, emails, reminders. Design:
@@ -34,7 +35,7 @@ const BATCH_LIMIT = 25;
 // Never let a background failure crash the process (server.ts exits on
 // unhandledRejection).
 export const runInBackground = (label: string, task: () => Promise<unknown>): void => {
-  task().catch((error) => console.error(`❌ Background task "${label}" failed: ${(error as Error).message}`));
+  task().catch((err) => logger.error('background task failed', { task: label, err }));
 };
 
 const lockIsFree = (now: Date) => ({
@@ -66,7 +67,7 @@ const tryCreateMeet = async (appointment: IAppointment): Promise<boolean> => {
     appointment.googleEventId = eventId;
     return true;
   } catch (error) {
-    console.error(`❌ Meet link creation failed for appointment ${String(appointment._id)}: ${(error as Error).message}`);
+    logger.error('meet link creation failed', { appointmentId: String(appointment._id), err: error });
     return false;
   }
 };
@@ -96,7 +97,7 @@ export const processConfirmation = async (id: Id, knownToken?: string): Promise<
       await sendBookingConfirmation(appointment, token);
     }
   } catch (error) {
-    console.error(`❌ Confirmation email failed for appointment ${String(appointment._id)}: ${(error as Error).message}`);
+    logger.error('confirmation email failed, will retry', { appointmentId: String(appointment._id), err: error });
     await releaseLock(appointment._id, now); // stays confirmationPending -> job retries
     return 'failed';
   }
@@ -105,8 +106,8 @@ export const processConfirmation = async (id: Id, knownToken?: string): Promise<
 
   // Clinic notification is nice-to-have: log on failure, don't retry
   // (retrying would mean re-sending the patient email too).
-  await sendClinicNewBooking(appointment).catch((error) =>
-    console.error(`❌ Clinic notification failed for appointment ${String(appointment._id)}: ${(error as Error).message}`)
+  await sendClinicNewBooking(appointment).catch((err) =>
+    logger.error('clinic notification failed', { appointmentId: String(appointment._id), err })
   );
   return 'done';
 };
@@ -137,7 +138,7 @@ export const retryMissingMeetLinks = async (): Promise<number> => {
         }
       } catch (error) {
         // The link is on the booking page and will be in the reminder.
-        console.error(`❌ Meet-link email failed for appointment ${String(appointment._id)}: ${(error as Error).message}`);
+        logger.error('meet link email failed', { appointmentId: String(appointment._id), err: error });
       }
     }
     await releaseLock(appointment._id, lockedAt);
@@ -173,7 +174,7 @@ export const sendDueReminders = async (): Promise<number> => {
       await sendReminder(appointment, await issueAdditionalAccessToken(appointment._id));
       sent++;
     } catch (error) {
-      console.error(`❌ Reminder failed for appointment ${String(appointment._id)}: ${(error as Error).message}`);
+      logger.error('reminder failed, will retry', { appointmentId: String(appointment._id), err: error });
       await Appointment.updateOne({ _id: appointment._id, reminderSentAt: now }, { $unset: { reminderSentAt: '' } });
       failed.push(appointment._id as Types.ObjectId);
     }
@@ -194,7 +195,7 @@ export const notifyCancellation = async (id: Id, refund: RefundNote): Promise<vo
       // retryMissingMeetLinks revives the event and emails the link.
       await Appointment.updateOne({ _id: appointment._id }, { $unset: { meetLink: '', googleEventId: '' } });
     } catch (error) {
-      console.error(`❌ Could not delete calendar event for appointment ${String(appointment._id)}: ${(error as Error).message}`);
+      logger.error('calendar event delete failed', { appointmentId: String(appointment._id), err: error });
     }
   }
   await sendCancellation(appointment, refund);

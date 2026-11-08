@@ -1,195 +1,56 @@
-import express, { Application, Request, Response } from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
-import morgan from 'morgan';
-import rateLimit from 'express-rate-limit';
-import mongoose from 'mongoose';
 import { connectDB } from './config/database';
 import { env, PAYMENTS_ENABLED } from './config/env';
-import appointmentRoutes from './routes/appointment.routes';
-import contactRoutes from './routes/contact.routes';
-import authRoutes from './routes/auth.routes';
-import doctorRoutes from './routes/doctor.routes';
-import configRoutes from './routes/config.routes';
-import settingsRoutes from './routes/settings.routes';
-import availabilityRoutes from './routes/availability.routes';
-import paymentRoutes from './routes/payment.routes';
-import jobsRoutes from './routes/jobs.routes';
-import { errorHandler } from './middleware/error.middleware';
+import { createApp } from './app';
 import { expireStaleHolds } from './utils/holdExpiry.util';
+import { logger } from './utils/logger';
 
-// Handle uncaught exceptions - MUST be at the top!
+// Process entry point: wires up crash handlers, connects to MongoDB, starts
+// listening, and runs the best-effort hold-expiry timer. All app/route
+// setup lives in app.ts.
+
 process.on('uncaughtException', (err: Error) => {
-  console.log('❌ Uncaught Exception:', err.message);
-  console.log(err.stack);
-  console.log('⚠️  Shutting down server...');
+  logger.error('uncaught exception, shutting down', { err });
   process.exit(1);
 });
 
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (err: Error) => {
-  console.log('❌ Unhandled Promise Rejection:', err.message);
-  console.log(err.stack);
-  console.log('⚠️  Shutting down server...');
+process.on('unhandledRejection', (reason: unknown) => {
+  logger.error('unhandled promise rejection, shutting down', { err: reason });
   process.exit(1);
 });
 
-// Create Express app
-const app: Application = express();
-
-// Render sits behind a reverse proxy; trust the first hop so req.ip
-// (used by rate limiting) reflects the real client IP.
-app.set('trust proxy', 1);
-
-// Initialize server
-const initializeServer = async () => {
-  // Database connection - wait for it to complete
+const start = async (): Promise<void> => {
   await connectDB();
+
+  const app = createApp();
+  const port = parseInt(env.PORT);
+  // Express 5 also calls this callback on failure, passing the error (the
+  // 'error' handler below deals with it), so only log success without one.
+  const server = app.listen(port, '0.0.0.0', (error?: Error) => {
+    if (error) return;
+    logger.info('server started', {
+      port,
+      nodeEnv: env.NODE_ENV,
+      paymentsEnabled: PAYMENTS_ENABLED,
+      emailProvider: env.EMAIL_PROVIDER,
+    });
+  });
+
+  server.on('error', (error: NodeJS.ErrnoException) => {
+    logger.error(error.code === 'EADDRINUSE' ? 'port already in use' : 'server error', { port, err: error });
+    process.exit(1);
+  });
+
+  // Best-effort periodic cleanup of expired payment holds. This is NOT the
+  // real guarantee (Render's free tier sleeps, so this may not run
+  // reliably): the lazy check on every availability/create request is what
+  // actually frees a slot, and GitHub Actions calls POST /api/jobs/run
+  // (see .github/workflows/scheduled-jobs.yml).
+  setInterval(() => {
+    expireStaleHolds().catch((err) => logger.error('hold expiry failed', { err }));
+  }, 5 * 60 * 1000);
 };
 
-// Start database connection
-initializeServer().catch((error) => {
-  console.error('❌ Failed to initialize server:', error);
+start().catch((err) => {
+  logger.error('failed to start', { err });
   process.exit(1);
 });
-
-// Security middleware
-app.use(helmet());
-
-// CORS configuration
-app.use(
-  cors({
-    origin: env.FRONTEND_URL,
-    credentials: true,
-  })
-);
-
-// Razorpay webhook. Mounted before express.json() (it needs the raw body
-// for signature verification) and before the general /api rate limiter
-// (Razorpay retries must never be throttled; every request is HMAC-checked
-// anyway). Not mounted at all while PAYMENTS_ENABLED=false, so it 404s.
-if (PAYMENTS_ENABLED) {
-  app.use('/api/payments', paymentRoutes);
-  console.log('💳 Payments enabled: /api/payments/webhook is live');
-} else {
-  console.log('💳 Payments disabled (PAYMENTS_ENABLED=false): online/pay_now bookings rejected');
-}
-
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: parseInt(env.RATE_LIMIT_WINDOW_MS),
-  max: parseInt(env.RATE_LIMIT_MAX_REQUESTS),
-  message: 'Too many requests from this IP, please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-app.use('/api/', limiter);
-
-// Body parsing middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Logging middleware
-if (env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));
-} else {
-  app.use(morgan('combined'));
-}
-
-// Health check endpoint
-app.get('/health', (_req: Request, res: Response) => {
-  const isDbConnected = mongoose.connection.readyState === 1;
-
-  if (!isDbConnected) {
-    res.status(503).json({
-      status: 'degraded',
-      timestamp: new Date().toISOString(),
-    });
-    return;
-  }
-
-  res.status(200).json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// API routes
-console.log('📌 Registering API routes...');
-app.use('/api/appointments', appointmentRoutes);
-app.use('/api/contact', contactRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/doctors', doctorRoutes);
-app.use('/api/config', configRoutes);
-app.use('/api/settings', settingsRoutes);
-app.use('/api/availability', availabilityRoutes);
-app.use('/api/jobs', jobsRoutes);
-console.log('✅ Routes registered');
-
-// 404 handler
-app.use((_req: Request, res: Response) => {
-  res.status(404).json({
-    status: 'error',
-    message: 'Route not found',
-  });
-});
-
-// Error handling middleware
-app.use(errorHandler);
-
-// Start server
-const PORT = parseInt(env.PORT);
-const HOST = '0.0.0.0'; // Listen on all IPv4 addresses
-
-console.log(`🔄 Attempting to start server on ${HOST}:${PORT}...`);
-
-const server = app.listen(PORT, HOST, () => {
-  console.log(`🚀 Server running in ${env.NODE_ENV} mode on port ${PORT}`);
-  console.log(`📍 Health check: http://localhost:${PORT}/health`);
-  console.log(`📍 API endpoints: http://localhost:${PORT}/api`);
-});
-
-console.log(`📊 Server object created, listening status: ${server.listening}`);
-
-setTimeout(() => {
-  console.log(`📊 Server address after timeout:`, server.address());
-  console.log(`📊 Server listening status:`, server.listening);
-  console.log(`📊 Event loop is active, server should stay running...`);
-}, 1000);
-
-server.on('error', (error: NodeJS.ErrnoException) => {
-  if (error.code === 'EADDRINUSE') {
-    console.error(`❌ Port ${PORT} is already in use`);
-  } else {
-    console.error('❌ Server error:', error);
-  }
-  process.exit(1);
-});
-
-// Keep the process alive
-setInterval(() => {
-  // This keeps the event loop active
-}, 60000);
-
-// Best-effort periodic cleanup of expired payment holds. This is NOT the
-// real guarantee (Render's free tier sleeps, so this interval may not run
-// reliably) — the lazy check on every availability/create request is what
-// actually frees a slot. The real scheduler is GitHub Actions calling
-// POST /api/jobs/run (see .github/workflows/scheduled-jobs.yml).
-setInterval(() => {
-  expireStaleHolds().catch((error) => {
-    console.error('❌ Failed to expire stale holds:', error);
-  });
-}, 5 * 60 * 1000);
-
-// Log if process is about to exit
-process.on('beforeExit', (code) => {
-  console.log(`⚠️  Process beforeExit event with code: ${code}`);
-});
-
-process.on('exit', (code) => {
-  console.log(`⚠️  Process exit event with code: ${code}`);
-});
-
-// export default app; // REMOVED - this file is not meant to be imported

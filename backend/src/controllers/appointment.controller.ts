@@ -13,6 +13,7 @@ import { createRazorpayOrder, RazorpayError } from '../utils/razorpay.util';
 import { refundAppointment, RefundOutcome } from '../utils/refund.util';
 import { PatientRequest } from '../middleware/patientAccess.middleware';
 import { AuthRequest } from '../middleware/auth.middleware';
+import { logger } from '../utils/logger';
 
 // Patient-facing view: deliberately omits patient.phone/email/symptoms
 // (the token holder already has their own contact info, no need to echo
@@ -210,9 +211,11 @@ export const createAppointment = async (
             $unset: { isActiveSlot: '', holdExpiresAt: '' },
           }
         );
-        const detail =
-          error instanceof RazorpayError ? `${error.httpStatus ?? 'network'} ${error.message}` : (error as Error).message;
-        console.error(`❌ Razorpay order creation failed for appointment ${String(appointment._id)}: ${detail}`);
+        logger.error('razorpay order creation failed; hold released', {
+          appointmentId: String(appointment._id),
+          razorpayStatus: error instanceof RazorpayError ? (error.httpStatus ?? 'network') : undefined,
+          err: error,
+        });
         res.status(502).json({ status: 'error', message: 'Could not start the payment. Please try again.' });
         return;
       }

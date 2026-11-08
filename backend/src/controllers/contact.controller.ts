@@ -3,6 +3,7 @@ import { validationResult } from 'express-validator';
 import z from 'zod';
 import Contact, { IContact } from '../models/Contact.model';
 import { sendContactConfirmation } from '../utils/email.util';
+import { logger } from '../utils/logger';
 
 // Validation schemas
 const updateContactSchema = z.object({
@@ -33,7 +34,7 @@ export const createContact = async (
     try {
       await sendContactConfirmation(contact as unknown as IContact);
     } catch (emailError) {
-      console.error('Email sending failed:', emailError);
+      logger.error('contact emails failed', { contactId: String((contact as unknown as { _id: unknown })._id), err: emailError });
     }
 
     res.status(201).json({

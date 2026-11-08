@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import Appointment, { IAppointment } from '../models/Appointment.model';
 import { createRazorpayRefund, RazorpayError, RazorpayRefund } from './razorpay.util';
+import { logger } from './logger';
 
 // A lock older than this is assumed to belong to a request that died
 // mid-call. Re-claiming it is safe: Razorpay itself rejects a second full
@@ -61,11 +62,13 @@ export const refundAppointment = async (appointmentId: Types.ObjectId | string):
       appointmentId: String(claimed._id),
     });
   } catch (error) {
-    const detail =
-      error instanceof RazorpayError
-        ? `${error.httpStatus ?? 'network'} ${error.code ?? ''} ${error.message}`
-        : (error as Error).message;
-    console.error(`❌ Refund failed for appointment ${String(claimed._id)}: ${detail}`);
+    logger.error('refund failed, flagged needs_manual_refund', {
+      appointmentId: String(claimed._id),
+      paymentId: claimed.razorpayPaymentId,
+      razorpayStatus: error instanceof RazorpayError ? (error.httpStatus ?? 'network') : undefined,
+      razorpayCode: error instanceof RazorpayError ? error.code : undefined,
+      err: error,
+    });
 
     const failed = await Appointment.findOneAndUpdate(
       { _id: claimed._id, refundLockedAt: now },
@@ -77,7 +80,7 @@ export const refundAppointment = async (appointmentId: Types.ObjectId | string):
 
   // From here the money has moved. Log the id first so it is never lost
   // even if the DB write below fails.
-  console.log(`✅ Razorpay refund ${refund.id} created for appointment ${String(claimed._id)}`);
+  logger.info('refund created', { appointmentId: String(claimed._id), refundId: refund.id, amount });
 
   const recordRefund = {
     $set: { paymentStatus: 'refunded', razorpayRefundId: refund.id },
@@ -103,8 +106,9 @@ export const refundAppointment = async (appointmentId: Types.ObjectId | string):
     return { outcome: 'refunded', appointment: recorded };
   }
 
-  console.error(
-    `❌ Refund ${refund.id} succeeded for appointment ${String(claimed._id)} but another refund was already recorded. Check the Razorpay dashboard.`
-  );
+  logger.error('refund succeeded but another refund was already recorded; check Razorpay dashboard', {
+    appointmentId: String(claimed._id),
+    refundId: refund.id,
+  });
   return { outcome: 'failed', appointment: await Appointment.findById(claimed._id) };
 };
