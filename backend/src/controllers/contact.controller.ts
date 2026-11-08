@@ -1,7 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import { validationResult } from 'express-validator';
+import z from 'zod';
 import Contact, { IContact } from '../models/Contact.model';
 import { sendContactConfirmation } from '../utils/email.util';
+
+// Validation schemas
+const updateContactSchema = z.object({
+  status: z.enum(['new', 'read', 'responded']),
+}).strict();
 
 // @desc    Create contact message
 // @route   POST /api/contact
@@ -85,9 +91,20 @@ export const updateContactStatus = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    const parsed = updateContactSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({
+        status: 'error',
+        message: 'Invalid input',
+        errors: parsed.error.format(),
+      });
+      return;
+    }
+
     const contact = await Contact.findByIdAndUpdate(
       req.params.id,
-      { status: req.body.status },
+      { $set: parsed.data },
       { new: true, runValidators: true }
     );
 

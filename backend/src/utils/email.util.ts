@@ -1,15 +1,16 @@
 import nodemailer from 'nodemailer';
 import { IAppointment } from '../models/Appointment.model';
 import { IContact } from '../models/Contact.model';
+import { env } from '../config/env';
 
 // Create transporter
 const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: Number(process.env.EMAIL_PORT),
+  host: env.EMAIL_HOST,
+  port: Number(env.EMAIL_PORT),
   secure: false,
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD,
+    user: env.EMAIL_USER,
+    pass: env.EMAIL_PASSWORD,
   },
 });
 
@@ -30,7 +31,7 @@ export const sendAppointmentConfirmation = async (
   }
 
   const mailOptions = {
-    from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+    from: env.EMAIL_FROM || env.EMAIL_USER,
     to: appointment.email,
     subject: 'Appointment Confirmation - Kasturi Ayurveda',
     html: `
@@ -66,8 +67,8 @@ export const sendAppointmentConfirmation = async (
 
   // Send to admin
   const adminMailOptions = {
-    from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
-    to: process.env.EMAIL_USER,
+    from: env.EMAIL_FROM || env.EMAIL_USER,
+    to: env.EMAIL_USER,
     subject: 'New Appointment Booking',
     html: `
       <h2>New Appointment Booking</h2>
@@ -99,7 +100,7 @@ export const sendContactConfirmation = async (
   contact: IContact
 ): Promise<void> => {
   const mailOptions = {
-    from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+    from: env.EMAIL_FROM || env.EMAIL_USER,
     to: contact.email,
     subject: 'We received your message - Kasturi Ayurveda',
     html: `
@@ -123,8 +124,8 @@ export const sendContactConfirmation = async (
 
   // Send to admin
   const adminMailOptions = {
-    from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
-    to: process.env.EMAIL_USER,
+    from: env.EMAIL_FROM || env.EMAIL_USER,
+    to: env.EMAIL_USER,
     subject: 'New Contact Message',
     html: `
       <h2>New Contact Message</h2>

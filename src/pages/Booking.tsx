@@ -10,8 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar } from "@/components/ui/calendar";
 import { Check, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+import { API_URL } from "@/lib/api";
 
 const Booking = () => {
   const [step, setStep] = useState(1);

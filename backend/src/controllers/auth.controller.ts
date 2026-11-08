@@ -3,15 +3,12 @@ import { validationResult } from 'express-validator';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.model';
 import { AuthRequest } from '../middleware/auth.middleware';
+import { env } from '../config/env';
 
 // Generate JWT Token
 const generateToken = (id: string): string => {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error('JWT_SECRET is not defined');
-  }
   // @ts-ignore - expiresIn type issue
-  return jwt.sign({ id }, secret, { expiresIn: '7d' });
+  return jwt.sign({ id }, env.JWT_SECRET, { expiresIn: '7d' });
 };
 
 // @desc    Register user
