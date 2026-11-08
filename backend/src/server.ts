@@ -12,7 +12,9 @@ import authRoutes from './routes/auth.routes';
 import doctorRoutes from './routes/doctor.routes';
 import configRoutes from './routes/config.routes';
 import settingsRoutes from './routes/settings.routes';
+import availabilityRoutes from './routes/availability.routes';
 import { errorHandler } from './middleware/error.middleware';
+import { expireStaleHolds } from './utils/holdExpiry.util';
 
 // Handle uncaught exceptions - MUST be at the top!
 process.on('uncaughtException', (err: Error) => {
@@ -108,6 +110,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/doctors', doctorRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/availability', availabilityRoutes);
 console.log('✅ Routes registered');
 
 // 404 handler
@@ -154,6 +157,16 @@ server.on('error', (error: NodeJS.ErrnoException) => {
 setInterval(() => {
   // This keeps the event loop active
 }, 60000);
+
+// Best-effort periodic cleanup of expired payment holds. This is NOT the
+// real guarantee (Render's free tier sleeps, so this interval may not run
+// reliably) — the lazy check on every availability/create request is what
+// actually frees a slot. A real scheduled job is Phase 6 territory.
+setInterval(() => {
+  expireStaleHolds().catch((error) => {
+    console.error('❌ Failed to expire stale holds:', error);
+  });
+}, 5 * 60 * 1000);
 
 // Log if process is about to exit
 process.on('beforeExit', (code) => {

@@ -3,7 +3,7 @@
 This file is the source of truth for the booking/payments build. Follow it exactly. If a task conflicts with this file, stop and ask instead of improvising.
 
 ## Current status
-Phase 1 (security fixes) is **DONE as of 2026-11-08**. Phase 1b (cookie auth) is **DEFERRED** — see "Phases" below. Phase 2 (Doctor + Settings models, seed script, public API) is **DONE as of 2026-11-08**. Phase 3 has not been started.
+Phase 1 (security fixes) is **DONE as of 2026-11-08**. Phase 1b (cookie auth) is **DEFERRED** — see "Phases" below. Phase 2 (Doctor + Settings models, seed script, public API) is **DONE as of 2026-11-08**. Phase 3 (new Appointment schema, `isActiveSlot` index, availability endpoint, hold expiry) is **DONE as of 2026-11-08** — backend only, by explicit choice: `src/pages/Booking.tsx` and `src/pages/Dashboard.tsx` still speak the old Appointment shape (old field names, old status enum) and will not work correctly against the new API until Phase 4 does the real Booking UI rework. No data migration was needed — the `appointments` collection was empty/test-only. Phase 4 has not been started.
 
 ## Product scope (decided)
 - ONE bookable, payable product: a **Consultation**, 30 minutes, **in-person or online**, fixed price (INR).
@@ -55,7 +55,6 @@ All schedule times are interpreted in `Asia/Kolkata`; stored instants are UTC.
 There is NO Service model. Remove the hardcoded service enum and lists used for booking. Therapy descriptions remain static content pages.
 
 ### Appointment
-**(Target schema — this is Phase 3 work. The live `Appointment` model is still the old flat schema from before this file existed; it is untouched until Phase 3 migrates it.)**
 - `doctorId` (ref), `slotStart` (Date, UTC), `slotEnd`
 - `kind`: `consultation` | `therapy_session` (therapy_session is admin-created only)
 - `title` (string, therapy_session only, free text set by staff)
@@ -119,13 +118,15 @@ There is NO Service model. Remove the hardcoded service enum and lists used for 
 - That page shows booking status, the Meet link, and the cancel action (when allowed). Rate-limit it.
 
 ## API surface (target)
-- `GET /api/doctors` (public, active only)
-- `GET /api/config` (public: consultation price, modes available given PAYMENTS_ENABLED, notice/advance window)
-- `GET /api/availability?doctorId&date` returns free 30-minute slots
-- `POST /api/appointments` (public, zod-validated)
-- `POST /api/payments/webhook` (only when PAYMENTS_ENABLED)
-- `GET /api/appointments/:id?token=` and `POST /api/appointments/:id/cancel?token=` (patient, token-gated)
-- Admin (JWT, role-checked, whitelisted-field schemas): list/update appointments, create `therapy_session`, cancel/refund, edit doctor schedule and `blockedDates`, edit Settings, view `needs_manual_refund` items
+- `GET /api/doctors` (public, active only) — **LIVE (Phase 2)**.
+- `GET /api/config` (public: consultation price, modes available given PAYMENTS_ENABLED, notice/advance window) — **LIVE (Phase 2)**.
+- `GET /api/availability?doctorId&date` returns free 30-minute slots — **LIVE (Phase 3)**.
+- `POST /api/appointments` (public, zod-validated) — **LIVE (Phase 3)**, but only reachable correctly once a caller sends the new payload shape (`doctorId`, `slotStart`, `mode`, `paymentMode`, `patient: {...}`); `Booking.tsx` doesn't yet (Phase 4).
+- `GET /api/appointments`, `GET /api/appointments/:id`, `PUT /api/appointments/:id` (admin, JWT) — **LIVE (Phase 3)**, but `PUT` only supports `status` transitions (`confirmed`/`completed`/`cancelled`/`no_show`), no refund logic yet; `Dashboard.tsx` doesn't send/read the new shape yet (Phase 4).
+- `POST /api/payments/webhook` (only when PAYMENTS_ENABLED) — not built (Phase 5).
+- `GET /api/appointments/:id?token=` and `POST /api/appointments/:id/cancel?token=` (patient, token-gated) — not built (Phase 4). `accessTokenHash` is already generated and stored on every new appointment (Phase 3), ready for these routes to consume.
+- Admin `therapy_session` creation, cancel/refund — not built (refund is Phase 5; therapy_session creation isn't assigned to a phase yet, raise it if needed).
+- `PUT /api/doctors/:id/schedule`, `PUT /api/settings`, `GET /api/doctors/admin` — **LIVE (Phase 2)**.
 
 ## Known bugs to fix (Phase 1)
 - JWT in localStorage; move to an HTTP-only secure cookie with CSRF consideration — **DEFERRED to Phase 1b** (see "Phases" below): the cookie would be cross-site today and browsers block it.
@@ -135,12 +136,14 @@ There is NO Service model. Remove the hardcoded service enum and lists used for 
 - `Dashboard.tsx` keeps its own ad-hoc login/session state instead of relying solely on `ProtectedRoute`.
 - 4 pre-existing ESLint warnings in `Dashboard.tsx` (unused `User` import, missing `fetchData` dependency in a `useEffect`, two unused `error` catch bindings).
 - The login rate limiter (5 failed attempts / 15 min / IP) is only verified by manual curl testing; no automated test yet.
+- 3 old-shape test documents remain in the `appointments` collection from before the Phase 3 schema migration (`service`/`preferredDoctor`/`appointmentDate` fields, old `pending` status) — confirmed as disposable test data, not real bookings. Safe to delete directly in the DB whenever convenient; harmless to leave since they don't match the new schema and won't be returned incorrectly, but worth clearing before Phase 7's test suite or any admin-dashboard rework touches this collection.
+- `Booking.tsx` and `Dashboard.tsx` send/expect the pre-Phase-3 `Appointment` shape and will get `400`s or show wrong fields against the live API until Phase 4 rebuilds them — this is tracked as the main Phase 4 deliverable, not a bug, but flagging here so it isn't mistaken for one in the meantime.
 
 ## Phases
 1. Security fixes and bug list above. No schema changes. — **DONE (2026-11-08)**.
    - **Phase 1b (cookie auth) — DEFERRED.** The frontend is on `vercel.app` and the backend on `onrender.com`, so an auth cookie is cross-site and gets blocked by browsers (SameSite/third-party cookie restrictions). Revisit only once the API is same-site — either a Vercel rewrite proxying `/api` to the Render backend, or a shared custom domain for both. Until then, keep using the JWT-in-localStorage approach and mitigate by shortening JWT expiry.
 2. Doctor + Settings models, seed script, public API; remove hardcoded doctor/service booking lists from the frontend. — **DONE (2026-11-08)**.
-3. New Appointment schema (including the service/doctor enum and lists currently still hardcoded on the old model), `isActiveSlot` partial unique index, availability endpoint, hold expiry.
+3. New Appointment schema (including the service/doctor enum and lists currently still hardcoded on the old model), `isActiveSlot` partial unique index, availability endpoint, hold expiry. — **DONE (2026-11-08)**. Backend only — `Booking.tsx`/`Dashboard.tsx` are not updated and will not work correctly until Phase 4.
 4. Booking UI rework (mode, real slots, consent, patient token page, cancel flow). Works end to end with `PAYMENTS_ENABLED=false`.
 5. Razorpay order, webhook, idempotency, refunds, in TEST mode, behind the flag.
 6. Google Meet link + transactional email + scheduled reminders.
