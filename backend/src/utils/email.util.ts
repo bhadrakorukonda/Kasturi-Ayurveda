@@ -25,40 +25,44 @@ transporter.verify().then(() => {
 export const sendAppointmentConfirmation = async (
   appointment: IAppointment
 ): Promise<void> => {
-  if (!appointment.email) {
+  if (!appointment.patient.email) {
     console.log('⚠️  No email provided for appointment, skipping email notification');
     return;
   }
 
+  const slotDateTime = new Date(appointment.slotStart).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  const modeLabel = appointment.mode === 'online' ? 'Online Consultation' : 'In-Person Consultation';
+
   const mailOptions = {
     from: env.EMAIL_FROM || env.EMAIL_USER,
-    to: appointment.email,
+    to: appointment.patient.email,
     subject: 'Appointment Confirmation - Kasturi Ayurveda',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #6b9e78;">Appointment Confirmation</h2>
-        <p>Dear ${appointment.name},</p>
+        <p>Dear ${appointment.patient.name},</p>
         <p>Thank you for booking an appointment with Kasturi Ayurveda. Your appointment details are:</p>
-        
+
         <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-          <p><strong>Date:</strong> ${new Date(appointment.appointmentDate).toLocaleDateString('en-IN', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-          })}</p>
-          <p><strong>Time:</strong> ${appointment.appointmentTime}</p>
-          <p><strong>Service:</strong> ${appointment.service}</p>
-          ${appointment.preferredDoctor ? `<p><strong>Preferred Doctor:</strong> ${appointment.preferredDoctor}</p>` : ''}
-          ${appointment.symptoms ? `<p><strong>Symptoms:</strong> ${appointment.symptoms}</p>` : ''}
+          <p><strong>Date & Time (IST):</strong> ${slotDateTime}</p>
+          <p><strong>Consultation Type:</strong> ${modeLabel}</p>
+          ${appointment.patient.symptoms ? `<p><strong>Symptoms:</strong> ${appointment.patient.symptoms}</p>` : ''}
         </div>
-        
+
         <p>We will contact you shortly to confirm your appointment.</p>
-        
+
         <p><strong>Contact Information:</strong></p>
         <p>Phone: 8247736253<br>
         Email: kasturiayurvedahyd@gmail.com</p>
-        
+
         <p>Best regards,<br>
         <strong>Kasturi Ayurveda Team</strong></p>
       </div>
@@ -72,15 +76,13 @@ export const sendAppointmentConfirmation = async (
     subject: 'New Appointment Booking',
     html: `
       <h2>New Appointment Booking</h2>
-      <p><strong>Name:</strong> ${appointment.name}</p>
-      ${appointment.email ? `<p><strong>Email:</strong> ${appointment.email}</p>` : ''}
-      <p><strong>Phone:</strong> ${appointment.phone}</p>
-      <p><strong>Date:</strong> ${new Date(appointment.appointmentDate).toLocaleDateString()}</p>
-      <p><strong>Time:</strong> ${appointment.appointmentTime}</p>
-      <p><strong>Service:</strong> ${appointment.service}</p>
-      ${appointment.preferredDoctor ? `<p><strong>Preferred Doctor:</strong> ${appointment.preferredDoctor}</p>` : ''}
-      ${appointment.symptoms ? `<p><strong>Symptoms:</strong> ${appointment.symptoms}</p>` : ''}
-      ${appointment.age ? `<p><strong>Age:</strong> ${appointment.age}</p>` : ''}
+      <p><strong>Name:</strong> ${appointment.patient.name}</p>
+      ${appointment.patient.email ? `<p><strong>Email:</strong> ${appointment.patient.email}</p>` : ''}
+      <p><strong>Phone:</strong> ${appointment.patient.phone}</p>
+      <p><strong>Date & Time (IST):</strong> ${slotDateTime}</p>
+      <p><strong>Consultation Type:</strong> ${modeLabel}</p>
+      ${appointment.patient.symptoms ? `<p><strong>Symptoms:</strong> ${appointment.patient.symptoms}</p>` : ''}
+      ${appointment.patient.age ? `<p><strong>Age:</strong> ${appointment.patient.age}</p>` : ''}
     `,
   };
 
