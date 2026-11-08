@@ -3,7 +3,7 @@
 This file is the source of truth for the booking/payments build. Follow it exactly. If a task conflicts with this file, stop and ask instead of improvising.
 
 ## Current status
-Phase 1 (security fixes) is **DONE as of 2026-11-08**. Phase 1b (cookie auth) is **DEFERRED** — see "Phases" below. Phase 2 has not been started.
+Phase 1 (security fixes) is **DONE as of 2026-11-08**. Phase 1b (cookie auth) is **DEFERRED** — see "Phases" below. Phase 2 (Doctor + Settings models, seed script, public API) is **DONE as of 2026-11-08**. Phase 3 has not been started.
 
 ## Product scope (decided)
 - ONE bookable, payable product: a **Consultation**, 30 minutes, **in-person or online**, fixed price (INR).
@@ -50,11 +50,12 @@ Phase 1 (security fixes) is **DONE as of 2026-11-08**. Phase 1b (cookie auth) is
 All schedule times are interpreted in `Asia/Kolkata`; stored instants are UTC.
 
 ### Settings (singleton document)
-`consultationPrice: { INR: number }` (paise, integer; actual value set by admin, not hardcoded),
+`consultationPrice: { INR: number, USD: number }` (paise/cents, integer; actual value set by admin, not hardcoded), `usdEnabled` (default false — USD is stored but never exposed by the public API while disabled),
 `minNoticeMins`, `maxAdvanceDays`, `holdMinutes` (default 10), `refundWindowHours` (default 24).
 There is NO Service model. Remove the hardcoded service enum and lists used for booking. Therapy descriptions remain static content pages.
 
 ### Appointment
+**(Target schema — this is Phase 3 work. The live `Appointment` model is still the old flat schema from before this file existed; it is untouched until Phase 3 migrates it.)**
 - `doctorId` (ref), `slotStart` (Date, UTC), `slotEnd`
 - `kind`: `consultation` | `therapy_session` (therapy_session is admin-created only)
 - `title` (string, therapy_session only, free text set by staff)
@@ -138,8 +139,8 @@ There is NO Service model. Remove the hardcoded service enum and lists used for 
 ## Phases
 1. Security fixes and bug list above. No schema changes. — **DONE (2026-11-08)**.
    - **Phase 1b (cookie auth) — DEFERRED.** The frontend is on `vercel.app` and the backend on `onrender.com`, so an auth cookie is cross-site and gets blocked by browsers (SameSite/third-party cookie restrictions). Revisit only once the API is same-site — either a Vercel rewrite proxying `/api` to the Render backend, or a shared custom domain for both. Until then, keep using the JWT-in-localStorage approach and mitigate by shortening JWT expiry.
-2. Doctor + Settings models, seed script, public API; remove hardcoded doctor/service booking lists from the frontend and schema enum.
-3. New Appointment schema, `isActiveSlot` partial unique index, availability endpoint, hold expiry.
+2. Doctor + Settings models, seed script, public API; remove hardcoded doctor/service booking lists from the frontend. — **DONE (2026-11-08)**.
+3. New Appointment schema (including the service/doctor enum and lists currently still hardcoded on the old model), `isActiveSlot` partial unique index, availability endpoint, hold expiry.
 4. Booking UI rework (mode, real slots, consent, patient token page, cancel flow). Works end to end with `PAYMENTS_ENABLED=false`.
 5. Razorpay order, webhook, idempotency, refunds, in TEST mode, behind the flag.
 6. Google Meet link + transactional email + scheduled reminders.
@@ -161,8 +162,9 @@ Use Vitest/Jest with mongodb-memory-server. Must cover:
 - Token page rejects a wrong or missing token
 
 ## Open decisions (values to fill in, ask before building)
-- Her actual working windows and weekly days off
-- The consultation price (paise, set via Settings, not hardcoded)
-- `minNoticeMins` and `maxAdvanceDays`
+- Doctor name is confirmed real: **Dr. Saraswathi Sharma**, seeded as the single active doctor. Her specialization (seeded as placeholder `"General Ayurvedic Physician"`) still needs a real value.
+- Her actual working windows and weekly days off — seeded as placeholders: Mon–Sat (`workingDays: [1,2,3,4,5,6]`), windows `10:00–14:00` and `17:00–21:00` IST. Awaiting her real schedule.
+- The consultation price (paise, set via Settings, not hardcoded) — seeded as a placeholder (`INR: 50000` = ₹500). Awaiting the clinic owner's real number.
+- `minNoticeMins` and `maxAdvanceDays` — seeded as placeholders (120 mins, 30 days).
 - Which transactional email provider (Resend or Brevo)
 - Razorpay account type / KYC path (deferred to Phase 8)
