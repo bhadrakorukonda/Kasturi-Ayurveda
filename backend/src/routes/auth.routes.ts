@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
+import rateLimit from 'express-rate-limit';
 import {
   register,
   login,
@@ -9,6 +10,16 @@ import {
 import { protect, authorize } from '../middleware/auth.middleware';
 
 const router = Router();
+
+// Login brute-force protection: 5 failed attempts per IP per 15 minutes
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many login attempts. Please try again later.',
+});
 
 // Validation rules
 const registerValidation = [
@@ -38,7 +49,7 @@ const updatePasswordValidation = [
 ];
 
 // Public routes
-router.post('/login', loginValidation, login);
+router.post('/login', loginLimiter, loginValidation, login);
 
 // Protected routes
 router.get('/me', protect, getMe);

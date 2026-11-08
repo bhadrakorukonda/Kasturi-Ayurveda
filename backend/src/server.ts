@@ -2,16 +2,14 @@ import express, { Application, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
+import mongoose from 'mongoose';
 import { connectDB } from './config/database';
+import { env } from './config/env';
 import appointmentRoutes from './routes/appointment.routes';
 import contactRoutes from './routes/contact.routes';
 import authRoutes from './routes/auth.routes';
 import { errorHandler } from './middleware/error.middleware';
-
-// Load environment variables
-dotenv.config();
 
 // Handle uncaught exceptions - MUST be at the top!
 process.on('uncaughtException', (err: Error) => {
@@ -32,6 +30,10 @@ process.on('unhandledRejection', (err: Error) => {
 // Create Express app
 const app: Application = express();
 
+// Render sits behind a reverse proxy; trust the first hop so req.ip
+// (used by rate limiting) reflects the real client IP.
+app.set('trust proxy', 1);
+
 // Initialize server
 const initializeServer = async () => {
   // Database connection - wait for it to complete
@@ -50,15 +52,15 @@ app.use(helmet());
 // CORS configuration
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:8080',
+    origin: env.FRONTEND_URL,
     credentials: true,
   })
 );
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100'),
+  windowMs: parseInt(env.RATE_LIMIT_WINDOW_MS),
+  max: parseInt(env.RATE_LIMIT_MAX_REQUESTS),
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -71,7 +73,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Logging middleware
-if (process.env.NODE_ENV === 'development') {
+if (env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 } else {
   app.use(morgan('combined'));
@@ -79,6 +81,16 @@ if (process.env.NODE_ENV === 'development') {
 
 // Health check endpoint
 app.get('/health', (_req: Request, res: Response) => {
+  const isDbConnected = mongoose.connection.readyState === 1;
+
+  if (!isDbConnected) {
+    res.status(503).json({
+      status: 'degraded',
+      timestamp: new Date().toISOString(),
+    });
+    return;
+  }
+
   res.status(200).json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -104,13 +116,13 @@ app.use((_req: Request, res: Response) => {
 app.use(errorHandler);
 
 // Start server
-const PORT = parseInt(process.env.PORT || '5000');
+const PORT = parseInt(env.PORT);
 const HOST = '0.0.0.0'; // Listen on all IPv4 addresses
 
 console.log(`🔄 Attempting to start server on ${HOST}:${PORT}...`);
 
 const server = app.listen(PORT, HOST, () => {
-  console.log(`🚀 Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+  console.log(`🚀 Server running in ${env.NODE_ENV} mode on port ${PORT}`);
   console.log(`📍 Health check: http://localhost:${PORT}/health`);
   console.log(`📍 API endpoints: http://localhost:${PORT}/api`);
 });

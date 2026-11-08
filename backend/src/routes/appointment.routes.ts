@@ -32,7 +32,7 @@ router.post('/', appointmentValidation, createAppointment);
 // Protected routes
 router.use(protect);
 router.get('/', authorize('admin', 'staff'), getAllAppointments);
-router.get('/:id', getAppointment);
+router.get('/:id', authorize('admin', 'staff'), getAppointment);
 router.put('/:id', authorize('admin', 'staff'), updateAppointment);
 router.delete('/:id', authorize('admin'), deleteAppointment);
 

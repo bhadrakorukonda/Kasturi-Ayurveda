@@ -1,7 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import { validationResult } from 'express-validator';
+import z from 'zod';
 import Appointment, { IAppointment } from '../models/Appointment.model';
 import { sendAppointmentConfirmation } from '../utils/email.util';
+
+// Validation schemas
+const updateAppointmentSchema = z.object({
+  status: z.enum(['pending', 'confirmed', 'completed', 'cancelled']),
+}).strict();
 
 // @desc    Create new appointment
 // @route   POST /api/appointments
@@ -120,9 +126,20 @@ export const updateAppointment = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    const parsed = updateAppointmentSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({
+        status: 'error',
+        message: 'Invalid input',
+        errors: parsed.error.format(),
+      });
+      return;
+    }
+
     const appointment = await Appointment.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      { $set: parsed.data },
       {
         new: true,
         runValidators: true,

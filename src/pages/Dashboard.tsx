@@ -23,8 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+import { API_URL } from "@/lib/api";
 
 interface Appointment {
   _id: string;
@@ -178,7 +177,7 @@ const Dashboard = () => {
   const updateContactStatus = async (id: string, status: string) => {
     try {
       const response = await fetch(`${API_URL}/contact/${id}`, {
-        method: "PATCH",
+        method: "PUT",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
