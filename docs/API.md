@@ -1,6 +1,6 @@
 # API reference (live)
 
-This documents the API **as it actually exists right now** (through Phase 3). It's a living reference — update it in place when an endpoint changes, don't append history here (that's [PROGRESS.md](PROGRESS.md)). See [CLAUDE.md](../CLAUDE.md) for the target surface and the rules behind these decisions.
+This documents the API **as it actually exists right now** (through Phase 4). It's a living reference — update it in place when an endpoint changes, don't append history here (that's [PROGRESS.md](PROGRESS.md)). See [CLAUDE.md](../CLAUDE.md) for the target surface and the rules behind these decisions.
 
 Base URL: `${VITE_API_URL}` (frontend) / `http://localhost:5000/api` (local dev). All request/response bodies are JSON.
 
@@ -104,12 +104,36 @@ Success (`201`):
   "amountDue": 50000, "accessToken": "<64-char hex, shown once>"
 } }
 ```
-`accessToken` is the one-time raw patient access token — only its SHA-256 hash is stored server-side (`accessTokenHash`). Nothing currently consumes this token (the patient token-gated routes are Phase 4) — hang onto it if you need it for testing ahead of that.
+`accessToken` is the one-time raw patient access token — only its SHA-256 hash is stored server-side (`accessTokenHash`). The frontend builds `/booking/<id>?token=<accessToken>` from this and shows it on the confirmation screen (and the confirmation email, when an email was given).
+
+### `GET /api/appointments/:id` — dual-mode: patient (`?token=`) or admin/staff (JWT), same route
+Rate-limited (30 req / 15 min / IP) together with the cancel route below.
+
+**As a patient** (`?token=<accessToken>`): a wrong/missing token → `403`. A valid token returns a trimmed, patient-safe view — deliberately excludes `patient.phone`/`email`/`symptoms` and `accessTokenHash` (DPDP minimization: the token holder already has their own contact details):
+```json
+{ "status": "success", "data": {
+  "id", "doctorName", "specialization", "slotStart", "slotEnd", "mode", "paymentMode",
+  "status", "amountDue", "currency", "meetLink", "patientName",
+  "cancellable": true
+} }
+```
+`cancellable` is computed server-side (`status === "confirmed"` and `slotStart - now >= Settings.refundWindowHours`) — the frontend just reads this flag rather than re-deriving the rule.
+
+**As admin/staff** (`Authorization: Bearer <JWT>`, no `?token=`): returns the full document (all fields, `doctorId` populated to `{ _id, name, specialization }`).
+
+### `POST /api/appointments/:id/cancel?token=<accessToken>`
+Public, token-gated (no admin equivalent — admins cancel via `PUT /api/appointments/:id` with `status: "cancelled"`). Same rate limit as the GET above.
+| Condition | Response |
+|---|---|
+| missing/invalid token | `403` |
+| `status !== "confirmed"` (already cancelled/completed/etc.) | `400` |
+| inside `Settings.refundWindowHours` of `slotStart` | `400`, with a message pointing the patient to call the clinic |
+| success | `200`, same patient-safe shape as the GET above, `status: "cancelled"` |
+
+If `paymentStatus === "paid"` at cancel time (not reachable yet — `pay_now` is blocked while `PAYMENTS_ENABLED=false`), it's set to `needs_manual_refund` instead of just cancelling, so a captured payment is never silently dropped. Real refunds are Phase 5.
 
 ### `GET /api/appointments` *(admin/staff)*
-Query: `status`, `date` (filters by `slotStart` day), `page`, `limit`. Paginated list, sorted by `slotStart`.
-
-### `GET /api/appointments/:id` *(admin/staff)*
+Query: `status`, `date` (filters by `slotStart` day), `page`, `limit`. Paginated list, sorted by `slotStart`, `doctorId` populated to `{ _id, name, specialization }`.
 
 ### `PUT /api/appointments/:id` *(admin/staff)*
 Body: `{ "status": "confirmed" | "completed" | "cancelled" | "no_show" }` — nothing else accepted. Transitioning to `completed`/`cancelled`/`no_show` unsets `isActiveSlot` (frees the slot); `cancelled` also sets `cancelledAt`/`cancelledBy: "admin"`. No refund logic yet (Phase 5).
@@ -145,6 +169,5 @@ Public, rate-limited (5 failed attempts / 15 min / IP). `{ email, password }` �
 
 ## Not yet built
 - `POST /api/payments/webhook` — Phase 5.
-- `GET /api/appointments/:id?token=` / `POST /api/appointments/:id/cancel?token=` (patient-facing, token-gated) — Phase 4.
 - Admin `therapy_session` creation — not yet assigned a phase.
 - Refund endpoints — Phase 5.

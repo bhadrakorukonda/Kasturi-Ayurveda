@@ -1,6 +1,7 @@
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,7 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
+import { Checkbox } from "@/components/ui/checkbox";
 import { AlertCircle, Check, Loader2 } from "lucide-react";
+import { startOfDay, addDays, isBefore, isAfter } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { API_URL } from "@/lib/api";
 
@@ -28,29 +31,55 @@ interface PublicConfig {
   refundWindowHours: number;
 }
 
-// TODO(Phase 3): replace with /api/availability
-const timeSlots = ["9:00 AM", "10:00 AM", "11:00 AM", "2:00 PM", "3:00 PM", "4:00 PM", "5:00 PM"];
+type Mode = "in_person" | "online";
+
+const formatDateYYYYMMDD = (date: Date): string => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
+const formatISTTime = (iso: string): string =>
+  new Date(iso).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" });
+
+const formatISTDateTime = (iso: string): string =>
+  new Date(iso).toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 
 const Booking = () => {
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
-    service: "Consultation",
-    doctor: "",
+    doctorId: "",
     date: undefined as Date | undefined,
-    time: "",
+    slotStart: "",
     name: "",
     age: "",
     phone: "",
     email: "",
     symptoms: ""
   });
+  const [mode, setMode] = useState<Mode>("in_person");
+  const [consentAccepted, setConsentAccepted] = useState(false);
+  const [createdAppointment, setCreatedAppointment] = useState<{ id: string; accessToken: string } | null>(null);
   const { toast } = useToast();
 
   const [doctors, setDoctors] = useState<PublicDoctor[]>([]);
   const [config, setConfig] = useState<PublicConfig | null>(null);
   const [isLoadingBookingInfo, setIsLoadingBookingInfo] = useState(true);
   const [bookingInfoError, setBookingInfoError] = useState<string | null>(null);
+
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+  const [slotsError, setSlotsError] = useState<string | null>(null);
 
   const loadBookingInfo = () => {
     setIsLoadingBookingInfo(true);
@@ -70,7 +99,7 @@ const Booking = () => {
         setConfig(configRes.data);
 
         if (activeDoctors.length === 1) {
-          setFormData((prev) => ({ ...prev, doctor: activeDoctors[0].name }));
+          setFormData((prev) => ({ ...prev, doctorId: activeDoctors[0].id }));
         }
       })
       .catch(() => {
@@ -85,6 +114,34 @@ const Booking = () => {
     loadBookingInfo();
   }, []);
 
+  useEffect(() => {
+    if (!formData.date || !formData.doctorId) {
+      setAvailableSlots([]);
+      return;
+    }
+
+    setIsLoadingSlots(true);
+    setSlotsError(null);
+    const dateStr = formatDateYYYYMMDD(formData.date);
+
+    fetch(`${API_URL}/availability?doctorId=${formData.doctorId}&date=${dateStr}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.status !== "success") throw new Error("Unexpected response from server");
+        const slots: string[] = json.data.slots;
+        setAvailableSlots(slots);
+        setFormData((prev) => (prev.slotStart && !slots.includes(prev.slotStart) ? { ...prev, slotStart: "" } : prev));
+      })
+      .catch(() => {
+        setSlotsError("Could not load available times. Please try again.");
+      })
+      .finally(() => {
+        setIsLoadingSlots(false);
+      });
+  }, [formData.date, formData.doctorId]);
+
+  const eligibleDoctors = mode === "online" ? doctors.filter((d) => d.supportsOnline) : doctors;
+
   const handleNext = () => {
     if (validateStep(step)) {
       if (step < 5) setStep(step + 1);
@@ -94,42 +151,47 @@ const Booking = () => {
   const validateStep = (currentStep: number) => {
     switch (currentStep) {
       case 1:
-        return formData.service !== "";
+        return mode !== "online" || consentAccepted;
       case 2:
-        return formData.doctor !== "";
+        return formData.doctorId !== "";
       case 3:
-        return formData.date && formData.time !== "";
+        return !!formData.date && formData.slotStart !== "";
       case 4:
-        return formData.name && formData.phone;
+        return !!formData.name && !!formData.phone;
       default:
         return true;
     }
   };
 
   const handleSubmit = async () => {
-    if (!formData.date) return;
-    
+    if (!formData.date || !formData.slotStart) return;
+
     setIsSubmitting(true);
-    
+
     try {
-      const appointmentData = {
-        name: formData.name,
-        email: formData.email || undefined,
-        phone: formData.phone,
-        service: formData.service,
-        preferredDoctor: formData.doctor,
-        appointmentDate: formData.date.toISOString().split('T')[0], // YYYY-MM-DD format
-        appointmentTime: formData.time,
-        symptoms: formData.symptoms || undefined,
-        age: formData.age ? parseInt(formData.age) : undefined
+      const payload: Record<string, unknown> = {
+        doctorId: formData.doctorId,
+        slotStart: formData.slotStart,
+        mode,
+        paymentMode: mode === "online" ? "pay_now" : "pay_at_clinic",
+        patient: {
+          name: formData.name,
+          phone: formData.phone,
+          email: formData.email || undefined,
+          age: formData.age ? parseInt(formData.age) : undefined,
+          symptoms: formData.symptoms || undefined,
+        },
       };
+      if (mode === "online") {
+        payload.consentAccepted = consentAccepted;
+      }
 
       const response = await fetch(`${API_URL}/appointments`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(appointmentData)
+        body: JSON.stringify(payload)
       });
 
       const data = await response.json();
@@ -138,6 +200,7 @@ const Booking = () => {
         throw new Error(data.message || 'Failed to book appointment');
       }
 
+      setCreatedAppointment({ id: data.data.id, accessToken: data.data.accessToken });
       toast({
         title: "Appointment Booked!",
         description: "You will receive a confirmation email shortly.",
@@ -161,6 +224,8 @@ const Booking = () => {
     { number: 4, label: "Details" },
     { number: 5, label: "Confirm" }
   ];
+
+  const selectedDoctor = doctors.find((d) => d.id === formData.doctorId);
 
   return (
     <div className="min-h-screen">
@@ -227,32 +292,68 @@ const Booking = () => {
                   <p className="text-xs text-muted-foreground">
                     Therapies and Panchakarma are planned with your doctor during the consultation and are not booked online.
                   </p>
+
+                  {config && config.modes.length > 1 && (
+                    <div className="space-y-3 pt-2">
+                      <Label>Consultation mode</Label>
+                      <Select
+                        value={mode}
+                        onValueChange={(value) => {
+                          setMode(value as Mode);
+                          setConsentAccepted(false);
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="in_person">In-person</SelectItem>
+                          {config.modes.includes("online") && (
+                            <SelectItem value="online">Online</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+
+                      {mode === "online" && (
+                        <div className="flex items-start gap-2 pt-1">
+                          <Checkbox
+                            id="consent"
+                            checked={consentAccepted}
+                            onCheckedChange={(checked) => setConsentAccepted(checked === true)}
+                          />
+                          <Label htmlFor="consent" className="text-sm font-normal leading-snug">
+                            I consent to an online video consultation and understand the session will not be recorded.
+                          </Label>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
               {step === 2 && (
                 <div className="space-y-4">
-                  {doctors.length === 1 ? (
+                  {eligibleDoctors.length === 1 ? (
                     <div className="rounded-lg border p-4">
                       <Label className="block mb-1">Your doctor</Label>
-                      <p className="font-medium">{doctors[0].name}</p>
-                      <p className="text-sm text-muted-foreground">{doctors[0].specialization}</p>
+                      <p className="font-medium">{eligibleDoctors[0].name}</p>
+                      <p className="text-sm text-muted-foreground">{eligibleDoctors[0].specialization}</p>
                     </div>
                   ) : (
                     <>
                       <Label>Select your preferred doctor</Label>
-                      <Select value={formData.doctor} onValueChange={(value) => setFormData({...formData, doctor: value})}>
+                      <Select value={formData.doctorId} onValueChange={(value) => setFormData({...formData, doctorId: value})}>
                         <SelectTrigger>
                           <SelectValue placeholder="Choose a doctor" />
                         </SelectTrigger>
                         <SelectContent>
-                          {doctors.map((doctor) => (
-                            <SelectItem key={doctor.id} value={doctor.name}>{doctor.name}</SelectItem>
+                          {eligibleDoctors.map((doctor) => (
+                            <SelectItem key={doctor.id} value={doctor.id}>{doctor.name}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                      {doctors.length === 0 && (
-                        <p className="text-sm text-destructive">No doctors are currently available for booking.</p>
+                      {eligibleDoctors.length === 0 && (
+                        <p className="text-sm text-destructive">No doctors are currently available for this mode.</p>
                       )}
                     </>
                   )}
@@ -266,23 +367,39 @@ const Booking = () => {
                     <Calendar
                       mode="single"
                       selected={formData.date}
-                      onSelect={(date) => setFormData({...formData, date})}
-                      disabled={(date) => date < new Date()}
+                      onSelect={(date) => setFormData({...formData, date, slotStart: ""})}
+                      disabled={(date) =>
+                        isBefore(date, startOfDay(new Date())) ||
+                        (config ? isAfter(date, addDays(new Date(), config.maxAdvanceDays)) : false)
+                      }
                       className="rounded-lg border w-full"
                     />
                   </div>
                   <div>
                     <Label>Select Time</Label>
-                    <Select value={formData.time} onValueChange={(value) => setFormData({...formData, time: value})}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Choose time slot" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {timeSlots.map((time) => (
-                          <SelectItem key={time} value={time}>{time}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {!formData.date ? (
+                      <p className="text-sm text-muted-foreground mt-2">Pick a date first.</p>
+                    ) : isLoadingSlots ? (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground mt-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Loading available times...
+                      </div>
+                    ) : slotsError ? (
+                      <p className="text-sm text-destructive mt-2">{slotsError}</p>
+                    ) : availableSlots.length === 0 ? (
+                      <p className="text-sm text-muted-foreground mt-2">No slots available for this date. Please choose another day.</p>
+                    ) : (
+                      <Select value={formData.slotStart} onValueChange={(value) => setFormData({...formData, slotStart: value})}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choose time slot" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableSlots.map((slot) => (
+                            <SelectItem key={slot} value={slot}>{formatISTTime(slot)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
                 </div>
               )}
@@ -324,20 +441,16 @@ const Booking = () => {
 
                   <div className="bg-accent/30 rounded-lg p-6 space-y-3">
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Service:</span>
-                      <span className="font-medium">{formData.service}</span>
+                      <span className="text-muted-foreground">Mode:</span>
+                      <span className="font-medium">{mode === "online" ? "Online" : "In-person"}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Doctor:</span>
-                      <span className="font-medium">{formData.doctor}</span>
+                      <span className="font-medium">{selectedDoctor?.name}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Date:</span>
-                      <span className="font-medium">{formData.date?.toLocaleDateString()}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Time:</span>
-                      <span className="font-medium">{formData.time}</span>
+                      <span className="text-muted-foreground">Date & Time:</span>
+                      <span className="font-medium">{formData.slotStart && formatISTDateTime(formData.slotStart)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Patient:</span>
@@ -345,8 +458,18 @@ const Booking = () => {
                     </div>
                   </div>
 
+                  {createdAppointment && (
+                    <Link to={`/booking/${createdAppointment.id}?token=${createdAppointment.accessToken}`}>
+                      <Button variant="outline" className="w-full rounded-full">
+                        View / Manage Your Booking
+                      </Button>
+                    </Link>
+                  )}
+
                   <p className="text-sm text-muted-foreground text-center">
-                    A confirmation has been sent to your phone. See you soon!
+                    {formData.email
+                      ? "A confirmation has been sent to your email. See you soon!"
+                      : "Save the link above to manage or cancel your booking later."}
                   </p>
                 </div>
               )}
@@ -354,17 +477,17 @@ const Booking = () => {
               {step < 5 && (
                 <div className="flex gap-4 mt-8">
                   {step > 1 && (
-                    <Button 
-                      variant="outline" 
-                      onClick={() => setStep(step - 1)} 
+                    <Button
+                      variant="outline"
+                      onClick={() => setStep(step - 1)}
                       className="flex-1 rounded-full"
                       disabled={isSubmitting}
                     >
                       Back
                     </Button>
                   )}
-                  <Button 
-                    onClick={step === 4 ? handleSubmit : handleNext} 
+                  <Button
+                    onClick={step === 4 ? handleSubmit : handleNext}
                     className="flex-1 rounded-full"
                     disabled={!validateStep(step) || isSubmitting}
                   >

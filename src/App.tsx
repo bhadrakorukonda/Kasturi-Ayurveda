@@ -10,6 +10,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 // Lazy load pages for better performance
 const Index = lazy(() => import("./pages/Index"));
 const Booking = lazy(() => import("./pages/Booking"));
+const BookingStatus = lazy(() => import("./pages/BookingStatus"));
 const Doctors = lazy(() => import("./pages/Doctors"));
 const Services = lazy(() => import("./pages/Services"));
 const Expertise = lazy(() => import("./pages/Expertise"));
@@ -51,6 +52,7 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/booking" element={<Booking />} />
+              <Route path="/booking/:id" element={<BookingStatus />} />
               <Route path="/doctors" element={<Doctors />} />
               <Route path="/services" element={<Services />} />
               <Route path="/expertise" element={<Expertise />} />

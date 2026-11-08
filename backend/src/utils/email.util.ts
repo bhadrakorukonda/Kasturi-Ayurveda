@@ -23,7 +23,8 @@ transporter.verify().then(() => {
 });
 
 export const sendAppointmentConfirmation = async (
-  appointment: IAppointment
+  appointment: IAppointment,
+  accessToken: string
 ): Promise<void> => {
   if (!appointment.patient.email) {
     console.log('⚠️  No email provided for appointment, skipping email notification');
@@ -40,6 +41,7 @@ export const sendAppointmentConfirmation = async (
     minute: '2-digit',
   });
   const modeLabel = appointment.mode === 'online' ? 'Online Consultation' : 'In-Person Consultation';
+  const manageLink = `${env.FRONTEND_URL}/booking/${appointment._id}?token=${accessToken}`;
 
   const mailOptions = {
     from: env.EMAIL_FROM || env.EMAIL_USER,
@@ -53,6 +55,7 @@ export const sendAppointmentConfirmation = async (
 
         <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
           <p><strong>Date & Time (IST):</strong> ${slotDateTime}</p>
+          <p><a href="${manageLink}">View or cancel your booking</a></p>
           <p><strong>Consultation Type:</strong> ${modeLabel}</p>
           ${appointment.patient.symptoms ? `<p><strong>Symptoms:</strong> ${appointment.patient.symptoms}</p>` : ''}
         </div>
