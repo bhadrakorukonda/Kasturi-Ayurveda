@@ -21,6 +21,7 @@ const envSchema = z.object({
   RATE_LIMIT_MAX_REQUESTS: z.string().default('100'),
   ADMIN_EMAIL: z.string().optional(),
   ADMIN_PASSWORD: z.string().optional(),
+  PAYMENTS_ENABLED: z.string().default('false'),
 });
 
 const parseEnv = () => {
@@ -44,3 +45,8 @@ const parseEnv = () => {
 };
 
 export const env = parseEnv();
+
+// PAYMENTS_ENABLED gates online booking + payment routes. Razorpay env vars
+// are only required at startup once this is true (not wired up until a
+// later phase).
+export const PAYMENTS_ENABLED = env.PAYMENTS_ENABLED === 'true';

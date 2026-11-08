@@ -9,6 +9,9 @@ import { env } from './config/env';
 import appointmentRoutes from './routes/appointment.routes';
 import contactRoutes from './routes/contact.routes';
 import authRoutes from './routes/auth.routes';
+import doctorRoutes from './routes/doctor.routes';
+import configRoutes from './routes/config.routes';
+import settingsRoutes from './routes/settings.routes';
 import { errorHandler } from './middleware/error.middleware';
 
 // Handle uncaught exceptions - MUST be at the top!
@@ -102,6 +105,9 @@ console.log('📌 Registering API routes...');
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/doctors', doctorRoutes);
+app.use('/api/config', configRoutes);
+app.use('/api/settings', settingsRoutes);
 console.log('✅ Routes registered');
 
 // 404 handler

@@ -1,6 +1,6 @@
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,15 +8,34 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
-import { Check, Loader2 } from "lucide-react";
+import { AlertCircle, Check, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { API_URL } from "@/lib/api";
+
+interface PublicDoctor {
+  id: string;
+  name: string;
+  specialization: string;
+  supportsOnline: boolean;
+  slotDurationMins: number;
+}
+
+interface PublicConfig {
+  consultationPriceDisplay: string;
+  modes: string[];
+  minNoticeMins: number;
+  maxAdvanceDays: number;
+  refundWindowHours: number;
+}
+
+// TODO(Phase 3): replace with /api/availability
+const timeSlots = ["9:00 AM", "10:00 AM", "11:00 AM", "2:00 PM", "3:00 PM", "4:00 PM", "5:00 PM"];
 
 const Booking = () => {
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
-    service: "",
+    service: "Consultation",
     doctor: "",
     date: undefined as Date | undefined,
     time: "",
@@ -28,9 +47,43 @@ const Booking = () => {
   });
   const { toast } = useToast();
 
-  const services = ["Consultation", "Panchakarma", "Ayurvedic Therapy", "Diet & Nutrition Plan"];
-  const doctors = ["Dr. Meera Sharma", "Dr. Anil Kumar", "Dr. Priya Reddy"];
-  const timeSlots = ["9:00 AM", "10:00 AM", "11:00 AM", "2:00 PM", "3:00 PM", "4:00 PM", "5:00 PM"];
+  const [doctors, setDoctors] = useState<PublicDoctor[]>([]);
+  const [config, setConfig] = useState<PublicConfig | null>(null);
+  const [isLoadingBookingInfo, setIsLoadingBookingInfo] = useState(true);
+  const [bookingInfoError, setBookingInfoError] = useState<string | null>(null);
+
+  const loadBookingInfo = () => {
+    setIsLoadingBookingInfo(true);
+    setBookingInfoError(null);
+
+    Promise.all([
+      fetch(`${API_URL}/doctors`).then((r) => r.json()),
+      fetch(`${API_URL}/config`).then((r) => r.json()),
+    ])
+      .then(([doctorsRes, configRes]) => {
+        if (doctorsRes.status !== "success" || configRes.status !== "success") {
+          throw new Error("Unexpected response from server");
+        }
+
+        const activeDoctors: PublicDoctor[] = doctorsRes.data;
+        setDoctors(activeDoctors);
+        setConfig(configRes.data);
+
+        if (activeDoctors.length === 1) {
+          setFormData((prev) => ({ ...prev, doctor: activeDoctors[0].name }));
+        }
+      })
+      .catch(() => {
+        setBookingInfoError("Could not load booking details. Please check your connection and try again.");
+      })
+      .finally(() => {
+        setIsLoadingBookingInfo(false);
+      });
+  };
+
+  useEffect(() => {
+    loadBookingInfo();
+  }, []);
 
   const handleNext = () => {
     if (validateStep(step)) {
@@ -143,35 +196,66 @@ const Booking = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              {isLoadingBookingInfo && (
+                <div className="flex flex-col items-center gap-3 py-12 text-muted-foreground">
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                  <span className="text-sm">Loading booking details...</span>
+                </div>
+              )}
+
+              {!isLoadingBookingInfo && bookingInfoError && (
+                <div className="flex flex-col items-center gap-3 py-12 text-center">
+                  <AlertCircle className="w-8 h-8 text-destructive" />
+                  <p className="text-sm text-muted-foreground">{bookingInfoError}</p>
+                  <Button variant="outline" onClick={loadBookingInfo} className="rounded-full">
+                    Try Again
+                  </Button>
+                </div>
+              )}
+
+              {!isLoadingBookingInfo && !bookingInfoError && (
+              <>
               {step === 1 && (
                 <div className="space-y-4">
-                  <Label>Select the service you need</Label>
-                  <Select value={formData.service} onValueChange={(value) => setFormData({...formData, service: value})}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose a service" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {services.map((service) => (
-                        <SelectItem key={service} value={service}>{service}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>Service</Label>
+                  <div className="rounded-lg border p-4 flex items-center justify-between">
+                    <span className="font-medium">Consultation</span>
+                    {config && (
+                      <span className="text-primary font-semibold">{config.consultationPriceDisplay}</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Therapies and Panchakarma are planned with your doctor during the consultation and are not booked online.
+                  </p>
                 </div>
               )}
 
               {step === 2 && (
                 <div className="space-y-4">
-                  <Label>Select your preferred doctor</Label>
-                  <Select value={formData.doctor} onValueChange={(value) => setFormData({...formData, doctor: value})}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose a doctor" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {doctors.map((doctor) => (
-                        <SelectItem key={doctor} value={doctor}>{doctor}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {doctors.length === 1 ? (
+                    <div className="rounded-lg border p-4">
+                      <Label className="block mb-1">Your doctor</Label>
+                      <p className="font-medium">{doctors[0].name}</p>
+                      <p className="text-sm text-muted-foreground">{doctors[0].specialization}</p>
+                    </div>
+                  ) : (
+                    <>
+                      <Label>Select your preferred doctor</Label>
+                      <Select value={formData.doctor} onValueChange={(value) => setFormData({...formData, doctor: value})}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choose a doctor" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {doctors.map((doctor) => (
+                            <SelectItem key={doctor.id} value={doctor.name}>{doctor.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {doctors.length === 0 && (
+                        <p className="text-sm text-destructive">No doctors are currently available for booking.</p>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
 
@@ -294,6 +378,8 @@ const Booking = () => {
                     )}
                   </Button>
                 </div>
+              )}
+              </>
               )}
             </CardContent>
           </Card>
