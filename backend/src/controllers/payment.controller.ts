@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import z from 'zod';
 import Appointment from '../models/Appointment.model';
 import { verifyWebhookSignature } from '../utils/razorpay.util';
+import { processConfirmation, runInBackground } from '../utils/notifications.util';
 
 // Only the fields we actually use. passthrough() so Razorpay adding fields
 // never breaks parsing; anything we don't recognise is simply ignored.
@@ -38,7 +39,9 @@ type PaymentEntity = z.infer<typeof paymentEntitySchema>;
 type RefundEntity = z.infer<typeof refundEntitySchema>;
 
 // payment.captured: the ONLY thing that ever confirms a pay_now booking.
-const handlePaymentCaptured = async (payment: PaymentEntity): Promise<void> => {
+// Returns the appointment id when this call confirmed it, so the caller can
+// start the confirmation work (Meet + email) after responding to Razorpay.
+const handlePaymentCaptured = async (payment: PaymentEntity): Promise<string | void> => {
   // Idempotency: this exact payment has already been processed (either
   // confirmed, refunded, or flagged for manual refund). Do nothing.
   if (await Appointment.exists({ razorpayPaymentId: payment.id })) {
@@ -79,6 +82,9 @@ const handlePaymentCaptured = async (payment: PaymentEntity): Promise<void> => {
           paymentStatus: 'paid',
           amountPaid: payment.amount,
           razorpayPaymentId: payment.id,
+          // Meet link + confirmation email are due; done after responding,
+          // and retried by the scheduled job if that fails.
+          confirmationPending: true,
         },
         $unset: { holdExpiresAt: '' },
       },
@@ -87,10 +93,7 @@ const handlePaymentCaptured = async (payment: PaymentEntity): Promise<void> => {
 
     if (confirmed) {
       console.log(`✅ Appointment ${String(confirmed._id)} confirmed by payment ${payment.id}`);
-      // Phase 6 hooks in here: create the Meet link (online) and send the
-      // confirmation email. Do that work after responding, so a Razorpay
-      // retry is always safe (the exists() check above makes it a no-op).
-      return;
+      return String(confirmed._id);
     }
   }
 
@@ -194,10 +197,11 @@ export const handleWebhook = async (req: Request, res: Response, next: NextFunct
     }
 
     const { event, payload } = parsed.data;
+    let confirmedId: string | void = undefined;
 
     switch (event) {
       case 'payment.captured':
-        if (payload.payment) await handlePaymentCaptured(payload.payment.entity);
+        if (payload.payment) confirmedId = await handlePaymentCaptured(payload.payment.entity);
         break;
       case 'payment.failed':
         if (payload.payment) await handlePaymentFailed(payload.payment.entity);
@@ -212,6 +216,14 @@ export const handleWebhook = async (req: Request, res: Response, next: NextFunct
 
     // Any DB error above throws to next() -> 500, so Razorpay retries.
     res.status(200).json({ status: 'ok' });
+
+    // Slow work after the 200 (Razorpay times out webhooks after a few
+    // seconds). A retried delivery is a no-op, so this runs exactly once
+    // here, with the scheduled job as the safety net.
+    if (confirmedId) {
+      const id = confirmedId;
+      runInBackground('confirmation', () => processConfirmation(id));
+    }
   } catch (error) {
     next(error);
   }

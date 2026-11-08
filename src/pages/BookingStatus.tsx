@@ -269,6 +269,12 @@ const BookingStatus = () => {
                       <span className="text-muted-foreground">Payment:</span>
                       <span className="font-medium">{paymentLabel(appointment)}</span>
                     </div>
+                    {appointment.mode === "online" && appointment.status === "confirmed" && !appointment.meetLink && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Meet Link:</span>
+                        <span className="text-sm text-muted-foreground">Being set up; we'll email it to you</span>
+                      </div>
+                    )}
                     {appointment.meetLink && (
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Meet Link:</span>

@@ -14,6 +14,7 @@ import configRoutes from './routes/config.routes';
 import settingsRoutes from './routes/settings.routes';
 import availabilityRoutes from './routes/availability.routes';
 import paymentRoutes from './routes/payment.routes';
+import jobsRoutes from './routes/jobs.routes';
 import { errorHandler } from './middleware/error.middleware';
 import { expireStaleHolds } from './utils/holdExpiry.util';
 
@@ -123,6 +124,7 @@ app.use('/api/doctors', doctorRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/availability', availabilityRoutes);
+app.use('/api/jobs', jobsRoutes);
 console.log('✅ Routes registered');
 
 // 404 handler
@@ -173,7 +175,8 @@ setInterval(() => {
 // Best-effort periodic cleanup of expired payment holds. This is NOT the
 // real guarantee (Render's free tier sleeps, so this interval may not run
 // reliably) — the lazy check on every availability/create request is what
-// actually frees a slot. A real scheduled job is Phase 6 territory.
+// actually frees a slot. The real scheduler is GitHub Actions calling
+// POST /api/jobs/run (see .github/workflows/scheduled-jobs.yml).
 setInterval(() => {
   expireStaleHolds().catch((error) => {
     console.error('❌ Failed to expire stale holds:', error);

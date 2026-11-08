@@ -4,6 +4,41 @@ Phase-by-phase history of the booking/payments build. See [CLAUDE.md](../CLAUDE.
 
 ---
 
+## Phase 6 — Google Meet links, transactional email, scheduled reminders
+**Done: 2026-11-08** · Branch: `phase-6-meet-email`
+
+**Decided with the user before building:** email provider kept flexible (both Resend and Brevo supported, chosen by `EMAIL_PROVIDER`); a fresh access token per email (hash-only storage kept); a regular Gmail account for Meet (OAuth refresh token); GitHub Actions as the scheduler instead of a paid Render cron job.
+
+**What was built**
+- **Email** (`mailer.util.ts`): Resend and Brevo adapters over plain `fetch`, plus a dev-only `log` provider (refused in production). Resend calls carry an idempotency key. Logs show only the email kind + appointment id.
+- **Email content** rewritten (`email.util.ts`): confirmation (Meet link if online), "Meet link ready", 24h reminder, cancellation (mentions the refund), refund notice, clinic notification, contact acknowledgement. HTML-escaped, with plain-text versions. **Removed the PII the old Gmail-SMTP emails sent:** symptoms, phone and age (to both patient and clinic), and the contact form no longer echoes the message.
+- **Google Meet** (`googleMeet.util.ts`): Calendar REST API with a cached OAuth access token. Event id = appointment id, so retries are idempotent; a cancelled event is revived on re-confirm. The patient is not added as an attendee. Events are deleted on cancellation. `npm run google-auth` is a one-time script to get the clinic account's refresh token.
+- **Fresh token per email:** `additionalAccessTokenHashes` (last 10), checked alongside the original by the patient-access middleware. The raw token is never stored.
+- **Notifications** (`notifications.util.ts`): confirmation runs after the response (pay-at-clinic create, `payment.captured` webhook), claimed atomically. If the email fails, `confirmationPending` stays set and the job retries; if Meet fails, the email still goes out ("link will follow") and the job retries the link. Reminders are claimed via `reminderSentAt`. All background work is wrapped so a failure can never crash the process.
+- **Scheduler:** `POST /api/jobs/run` (Bearer `CRON_SECRET`, constant-time compare) plus `.github/workflows/scheduled-jobs.yml` every 15 min.
+- **Env:** `EMAIL_PROVIDER`, `EMAIL_FROM` and `CRON_SECRET` always required; `EMAIL_API_KEY` unless `log`. `GOOGLE_*` required when `PAYMENTS_ENABLED=true`. Removed `EMAIL_HOST/PORT/USER/PASSWORD` and the `nodemailer` dependency.
+- **UI:** booking page notes a pending Meet link; dashboard shows the Meet link or "No Meet link yet (retrying)".
+- **Docs:** new `docs/SETUP_PHASE6.md` (accounts, keys, GitHub secrets, Google OAuth steps).
+
+**How this was verified:** end-to-end script against the real backend + local MongoDB, with a test-only fetch preload standing in for Resend, Google OAuth/Calendar and Razorpay. **51/51 checks passed**, covering:
+- right recipients; no symptoms/phone/age in any email; HTML escaping
+- fresh per-email tokens work, the original keeps working, a random one fails, nothing raw in the DB
+- duplicate webhook → one email
+- Google outage → email still sent, link created and emailed by the job after recovery
+- email outage → retried, exactly once even with 3 concurrent job runs
+- reminders sent once, only for bookings made >24h ahead, retried after failure
+- cancellation emails + calendar event deletion; no email for unconfirmed holds
+- re-confirm revives the Meet link
+- refund notice; contact form; jobs endpoint rejects missing/wrong secret
+
+The **Phase 5 payment suite was re-run: 52/52** (two failures on the first run were leftover test data plus a timing assumption in the test, both fixed in the test, not the code). Startup guards checked: missing key, `log` in production, short `CRON_SECRET`, malformed `EMAIL_FROM`, payments on without Google vars. The local dev config still boots. Server log: zero patient data/secrets. Test data deleted.
+
+**Not verified (needs real accounts):** delivery through real Resend/Brevo (spam placement, sender verification), real Google Meet creation, the GitHub Actions run against Render.
+
+**Left undone:** the email for a payment that arrived after its hold expired (the patient sees it on the booking page; they get the refund email when an admin refunds); retries for cancellation/refund emails; the contact form's raw `req.body` (pre-existing, logged in the CLAUDE.md backlog); automated tests (Phase 7).
+
+---
+
 ## Phase 5 — Razorpay orders, webhook, idempotency, refunds (TEST mode, behind the flag)
 **Done: 2026-11-08** · Branch: `phase-5-razorpay`
 

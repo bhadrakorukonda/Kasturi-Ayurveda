@@ -2,7 +2,7 @@ import { Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import mongoose from 'mongoose';
 import Appointment from '../models/Appointment.model';
-import { verifyPatientAccessToken } from '../utils/token.util';
+import { verifyAnyPatientAccessToken } from '../utils/token.util';
 import { protect, authorize, AuthRequest } from './auth.middleware';
 import { IAppointment } from '../models/Appointment.model';
 
@@ -28,7 +28,10 @@ const loadAppointmentForToken = async (
   }
 
   const appointment = await Appointment.findById(id);
-  if (!appointment || !verifyPatientAccessToken(token, appointment.accessTokenHash)) {
+  if (
+    !appointment ||
+    !verifyAnyPatientAccessToken(token, [appointment.accessTokenHash, ...(appointment.additionalAccessTokenHashes ?? [])])
+  ) {
     return null;
   }
 

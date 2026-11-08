@@ -1,6 +1,6 @@
 # API reference (live)
 
-This documents the API **as it actually exists right now** (through Phase 5). It's a living reference — update it in place when an endpoint changes, don't append history here (that's [PROGRESS.md](PROGRESS.md)). See [CLAUDE.md](../CLAUDE.md) for the target surface and the rules behind these decisions.
+This documents the API **as it actually exists right now** (through Phase 6). It's a living reference — update it in place when an endpoint changes, don't append history here (that's [PROGRESS.md](PROGRESS.md)). See [CLAUDE.md](../CLAUDE.md) for the target surface and the rules behind these decisions.
 
 Base URL: `${VITE_API_URL}` (frontend) / `http://localhost:5000/api` (local dev). All request/response bodies are JSON.
 
@@ -113,7 +113,7 @@ Success, `pay_now` (`201`): created as `status: "pending_payment"` with `isActiv
   "payment": { "keyId": "rzp_test_...", "orderId": "order_...", "amount": 50000, "currency": "INR" }
 } }
 ```
-The frontend opens Razorpay Checkout with `payment`. The Checkout success callback is **not** trusted: the booking is confirmed only by the `payment.captured` webhook. No confirmation email is sent for `pay_now` yet (Phase 6).
+The frontend opens Razorpay Checkout with `payment`. The Checkout success callback is **not** trusted: the booking is confirmed only by the `payment.captured` webhook, which then triggers the Meet link (online) and confirmation email.
 
 `accessToken` is the one-time raw patient access token — only its SHA-256 hash is stored server-side (`accessTokenHash`). The frontend builds `/booking/<id>?token=<accessToken>` from this and shows it on the confirmation screen (and the confirmation email, when an email was given).
 
@@ -180,6 +180,34 @@ Hard delete.
 
 ---
 
+## Scheduled jobs
+
+### `POST /api/jobs/run`
+Called every 15 min by GitHub Actions (`.github/workflows/scheduled-jobs.yml`). Requires `Authorization: Bearer <CRON_SECRET>` (constant-time compare); anything else → `401`. Safe to call repeatedly or concurrently. One pass:
+1. Expire unpaid holds past `holdExpiresAt`.
+2. Retry confirmations still `confirmationPending` (Meet link if online, confirmation email, clinic notification).
+3. Retry missing Meet links for confirmed online bookings, then email the link.
+4. Send 24h reminders: confirmed, has an email, slot within the next 24h, booked more than 24h before the slot, not yet reminded.
+
+```json
+{ "status": "success", "data": { "confirmationsSent": 0, "meetLinksCreated": 0, "remindersSent": 1 } }
+```
+
+### Emails sent (Phase 6)
+| Trigger | Email | Retried by the job if it fails? |
+|---|---|---|
+| `pay_at_clinic` booking created | confirmation (+ clinic notification) | yes |
+| `payment.captured` webhook | Meet link (online) + confirmation (+ clinic notification) | yes |
+| Meet link created late | "your Meet link" | the link creation is; the email is best-effort |
+| ~24h before slot | reminder | yes |
+| confirmed booking cancelled (patient or admin) | cancellation (mentions the refund if any); calendar event deleted | no (best-effort) |
+| `POST /:id/refund` | refund notice | no (best-effort) |
+| `POST /api/contact` | acknowledgement (+ clinic notification) | no |
+
+Emails that need the "manage booking" link carry a freshly minted token (hash stored in `additionalAccessTokenHashes`); the original token from booking keeps working too.
+
+---
+
 ## Contact (unchanged since Phase 1)
 
 ### `POST /api/contact`
@@ -206,4 +234,3 @@ Public, rate-limited (5 failed attempts / 15 min / IP). `{ email, password }` �
 
 ## Not yet built
 - Admin `therapy_session` creation — not yet assigned a phase.
-- Google Meet link, transactional email (incl. `pay_now` confirmation), reminders — Phase 6.

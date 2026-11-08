@@ -22,3 +22,12 @@ export const verifyPatientAccessToken = (token: string, storedHash: string): boo
 
   return crypto.timingSafeEqual(candidateHash, storedHashBuffer);
 };
+
+// Check a token against the original hash and every extra one minted for
+// later emails. Every hash is compared (no early exit) to keep timing flat.
+export const verifyAnyPatientAccessToken = (token: string, hashes: string[]): boolean =>
+  hashes.reduce((matched, hash) => verifyPatientAccessToken(token, hash) || matched, false);
+
+// Only the last N extra tokens stay valid; enough for a confirmation,
+// a reminder, and a few retries/Meet-link emails.
+export const MAX_ADDITIONAL_TOKENS = 10;
