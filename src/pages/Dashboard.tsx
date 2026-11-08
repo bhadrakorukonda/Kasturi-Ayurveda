@@ -23,7 +23,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { AlertTriangle } from "lucide-react";
 import { API_URL } from "@/lib/api";
+
+const rupees = (paise?: number) => `₹${((paise ?? 0) / 100).toFixed(2)}`;
 
 interface Appointment {
   _id: string;
@@ -33,6 +46,10 @@ interface Appointment {
   mode: "in_person" | "online";
   paymentMode: "pay_now" | "pay_at_clinic";
   paymentStatus: "unpaid" | "paid" | "refunded" | "failed" | "needs_manual_refund";
+  amountDue?: number;
+  amountPaid?: number;
+  amountRefunded?: number;
+  razorpayPaymentId?: string;
   // Optional: pre-Phase-3 legacy documents don't have this sub-object.
   patient?: {
     name: string;
@@ -93,6 +110,12 @@ const Dashboard = () => {
   const [loginData, setLoginData] = useState({ email: "", password: "" });
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [contacts, setContacts] = useState<ContactMessage[]>([]);
+  // Fetched separately (not from the paginated list) so a payment that
+  // needs refunding can never be hidden on a later page.
+  const [manualRefunds, setManualRefunds] = useState<Appointment[]>([]);
+  const [cancelTarget, setCancelTarget] = useState<Appointment | null>(null);
+  const [refundTarget, setRefundTarget] = useState<Appointment | null>(null);
+  const [isActing, setIsActing] = useState(false);
   const [stats, setStats] = useState({
     totalAppointments: 0,
     confirmedAppointments: 0,
@@ -109,14 +132,22 @@ const Dashboard = () => {
 
   const fetchData = async () => {
     try {
-      const [appointmentsRes, contactsRes] = await Promise.all([
+      const [appointmentsRes, contactsRes, manualRefundsRes] = await Promise.all([
         fetch(`${API_URL}/appointments`, {
           headers: { Authorization: `Bearer ${token}` }
         }),
         fetch(`${API_URL}/contact`, {
           headers: { Authorization: `Bearer ${token}` }
+        }),
+        fetch(`${API_URL}/appointments?paymentStatus=needs_manual_refund&limit=200`, {
+          headers: { Authorization: `Bearer ${token}` }
         })
       ]);
+
+      if (manualRefundsRes.ok) {
+        const manualRefundsData = await manualRefundsRes.json();
+        setManualRefunds(manualRefundsData.data || []);
+      }
 
       if (appointmentsRes.ok) {
         const appointmentsData = await appointmentsRes.json();
@@ -185,7 +216,17 @@ const Dashboard = () => {
     toast({ title: "Logged out successfully" });
   };
 
-  const updateAppointmentStatus = async (id: string, status: string) => {
+  const handleStatusChange = (apt: Appointment, status: string) => {
+    // A paid booking can't be cancelled without an explicit refund decision.
+    if (status === "cancelled" && apt.paymentStatus === "paid") {
+      setCancelTarget(apt);
+      return;
+    }
+    updateAppointmentStatus(apt._id, status);
+  };
+
+  const updateAppointmentStatus = async (id: string, status: string, refund?: boolean) => {
+    setIsActing(true);
     try {
       const response = await fetch(`${API_URL}/appointments/${id}`, {
         method: "PUT",
@@ -193,19 +234,56 @@ const Dashboard = () => {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ status })
+        body: JSON.stringify(refund === undefined ? { status } : { status, refund })
       });
+      const data = await response.json().catch(() => ({}));
 
-      if (response.ok) {
-        toast({ title: "Status updated successfully" });
-        fetchData();
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to update appointment status");
       }
+
+      toast({
+        title: data.refund === "needs_manual_refund" ? "Cancelled, but the refund failed" : "Status updated successfully",
+        description: data.refund === "refunded" ? "A full refund has been issued." : data.refund === "needs_manual_refund" ? data.message : undefined,
+        variant: data.refund === "needs_manual_refund" ? "destructive" : undefined,
+      });
+      fetchData();
     } catch (error) {
       toast({
         title: "Update failed",
-        description: "Failed to update appointment status",
+        description: error instanceof Error ? error.message : "Failed to update appointment status",
         variant: "destructive"
       });
+    } finally {
+      setIsActing(false);
+      setCancelTarget(null);
+    }
+  };
+
+  const refundAppointment = async (id: string) => {
+    setIsActing(true);
+    try {
+      const response = await fetch(`${API_URL}/appointments/${id}/refund`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.message || "Refund failed");
+      }
+
+      toast({ title: "Refund issued", description: "A full refund has been sent via Razorpay." });
+    } catch (error) {
+      toast({
+        title: "Refund failed",
+        description: error instanceof Error ? error.message : "Refund failed",
+        variant: "destructive"
+      });
+    } finally {
+      setIsActing(false);
+      setRefundTarget(null);
+      fetchData();
     }
   };
 
@@ -304,6 +382,53 @@ const Dashboard = () => {
               Logout
             </Button>
           </div>
+
+          {/* Payments that were taken but couldn't be honoured (e.g. hold
+              expired before the payment landed, or an automatic refund
+              failed). These must never be missed. */}
+          {manualRefunds.length > 0 && (
+            <Card className="mb-6 border-destructive">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-destructive">
+                  <AlertTriangle className="w-5 h-5" />
+                  {manualRefunds.length} payment{manualRefunds.length === 1 ? "" : "s"} need{manualRefunds.length === 1 ? "s" : ""} a refund
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  These patients paid but don't have a valid booking, or an automatic refund failed. Refund them below, or
+                  check the Razorpay dashboard if a refund here fails again.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {manualRefunds.map((apt) => {
+                    const slot = formatSlotIST(apt.slotStart);
+                    return (
+                      <div key={apt._id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                        <div className="text-sm">
+                          <div className="font-medium">
+                            {apt.patient?.name ?? "—"} · {apt.patient?.phone ?? "—"}
+                          </div>
+                          <div className="text-muted-foreground">
+                            {slot.date} {slot.time} · {apt.status} · paid {rupees(apt.amountPaid)}
+                            {apt.razorpayPaymentId && ` · ${apt.razorpayPaymentId}`}
+                          </div>
+                        </div>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          className="rounded-full"
+                          disabled={isActing}
+                          onClick={() => setRefundTarget(apt)}
+                        >
+                          Refund {rupees((apt.amountPaid ?? 0) - (apt.amountRefunded ?? 0))}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -427,7 +552,15 @@ const Dashboard = () => {
                           <TableCell>
                             <div className="text-sm">
                               <div>{apt.paymentMode === "pay_at_clinic" ? "Pay at clinic" : "Pay now"}</div>
-                              <div className="text-muted-foreground">{apt.paymentStatus}</div>
+                              <div
+                                className={
+                                  apt.paymentStatus === "needs_manual_refund" ? "text-destructive font-medium" : "text-muted-foreground"
+                                }
+                              >
+                                {apt.paymentStatus}
+                                {apt.paymentStatus === "paid" && ` · ${rupees(apt.amountPaid)}`}
+                                {apt.paymentStatus === "refunded" && ` · ${rupees(apt.amountRefunded)}`}
+                              </div>
                             </div>
                           </TableCell>
                           <TableCell>
@@ -436,20 +569,35 @@ const Dashboard = () => {
                             </Badge>
                           </TableCell>
                           <TableCell>
+                            <div className="flex flex-col gap-2">
                             <Select
                               value={apt.status}
-                              onValueChange={(value) => updateAppointmentStatus(apt._id, value)}
+                              onValueChange={(value) => handleStatusChange(apt, value)}
+                              disabled={isActing}
                             >
                               <SelectTrigger className="w-32">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
+                                <SelectItem value="pending_payment" disabled>Pending payment</SelectItem>
                                 <SelectItem value="confirmed">Confirmed</SelectItem>
                                 <SelectItem value="completed">Completed</SelectItem>
                                 <SelectItem value="cancelled">Cancelled</SelectItem>
                                 <SelectItem value="no_show">No Show</SelectItem>
                               </SelectContent>
                             </Select>
+                            {(apt.paymentStatus === "paid" || apt.paymentStatus === "needs_manual_refund") && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-32"
+                                disabled={isActing}
+                                onClick={() => setRefundTarget(apt)}
+                              >
+                                Refund
+                              </Button>
+                            )}
+                            </div>
                           </TableCell>
                         </TableRow>
                         );
@@ -460,6 +608,62 @@ const Dashboard = () => {
               </div>
             </CardContent>
           </Card>
+
+          {/* Cancel a PAID booking: admin must choose refund or not. */}
+          <AlertDialog open={!!cancelTarget} onOpenChange={(open) => !open && !isActing && setCancelTarget(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Cancel a paid booking</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {cancelTarget?.patient?.name ?? "This patient"} paid {rupees(cancelTarget?.amountPaid)} online. Do you want to
+                  refund them in full?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isActing}>Keep booking</AlertDialogCancel>
+                <Button
+                  variant="outline"
+                  disabled={isActing}
+                  onClick={() => cancelTarget && updateAppointmentStatus(cancelTarget._id, "cancelled", false)}
+                >
+                  Cancel, no refund
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={isActing}
+                  onClick={() => cancelTarget && updateAppointmentStatus(cancelTarget._id, "cancelled", true)}
+                >
+                  {isActing ? <Loader2 className="w-4 h-4 animate-spin" /> : `Cancel & refund ${rupees(cancelTarget?.amountPaid)}`}
+                </Button>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          {/* Refund (without changing status). */}
+          <AlertDialog open={!!refundTarget} onOpenChange={(open) => !open && !isActing && setRefundTarget(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Issue a full refund?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {rupees((refundTarget?.amountPaid ?? 0) - (refundTarget?.amountRefunded ?? 0))} will be refunded to{" "}
+                  {refundTarget?.patient?.name ?? "the patient"} via Razorpay. The booking status won't change. This can't be
+                  undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isActing}>Back</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={isActing}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (refundTarget) refundAppointment(refundTarget._id);
+                  }}
+                >
+                  {isActing ? <Loader2 className="w-4 h-4 animate-spin" /> : "Refund"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           {/* Contact Messages Table */}
           <Card>

@@ -4,6 +4,30 @@ Phase-by-phase history of the booking/payments build. See [CLAUDE.md](../CLAUDE.
 
 ---
 
+## Phase 5 — Razorpay orders, webhook, idempotency, refunds (TEST mode, behind the flag)
+**Done: 2026-11-08** · Branch: `phase-5-razorpay`
+
+**What was built**
+- **No new dependency.** Razorpay is called through its REST API with Node's built-in `fetch` + `crypto` (`backend/src/utils/razorpay.util.ts`): create order, create refund, verify webhook HMAC. The official SDK would only have wrapped those three calls.
+- **Env:** `PAYMENTS_ENABLED` is now strictly `"true"`/`"false"` (a typo crashes startup instead of silently meaning "off"). With it `true`, `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET`/`RAZORPAY_WEBHOOK_SECRET` are required. Extra guard: an `rzp_live_` key outside `NODE_ENV=production` refuses to start.
+- **`pay_now` booking:** created `pending_payment` + `isActiveSlot` + `holdExpiresAt`, then a server-side Razorpay order for `Settings.consultationPrice.INR`. If order creation fails the hold is released at once and the API returns `502`.
+- **Webhook** `POST /api/payments/webhook`: raw body (`express.raw` on this route only), mounted before `express.json()` and the general rate limiter, only when the flag is on. Handles `payment.captured` (the ONLY path to `confirmed` for `pay_now`), `payment.failed`, `refund.failed`; ignores the rest with `200`. Idempotent on `razorpayPaymentId`. A payment landing after its hold expired is recorded and flagged `needs_manual_refund`.
+- **Refunds** (`backend/src/utils/refund.util.ts`): one helper used by patient cancel, admin cancel, and the new admin `POST /api/appointments/:id/refund`. Claims the appointment atomically before calling Razorpay, so it can never refund twice. Razorpay failure → `needs_manual_refund`, never lost.
+- **Patient cancel** is now a single atomic claim (status + 24h rule in one query), then auto-refund if paid.
+- **Admin `PUT`**: cancelling a paid booking requires an explicit `refund: true|false`; `refund: true` is admin-only. `confirmed` now re-claims the slot (see bug below). List endpoint gained a zod-validated `paymentStatus` filter.
+- **Model:** added internal `refundLockedAt` (refund in-flight lock, not in the CLAUDE.md data model; it's bookkeeping only), plus indexes on `razorpayRefundId` and `paymentStatus`.
+- **Frontend:** `src/lib/razorpay.ts` loads hosted Checkout on demand. `Booking.tsx` offers pay-now/pay-at-clinic for in-person (when payments are on), always pay-now for online, opens Checkout, and has a "complete your payment / slot held until…" screen with retry if Checkout is closed. `BookingStatus.tsx` polls while `pending_payment` (3s, up to ~2 min), shows real payment/refund state, and mentions the refund in the cancel dialog. `Dashboard.tsx` has a red "payments need a refund" banner (fetched separately so pagination can't hide one), a Refund button, a cancel-a-paid-booking dialog (refund / no refund), and now shows errors on failed status changes instead of failing silently.
+
+**Bug fixed on the way (from Phase 3):** admin setting a cancelled appointment back to `confirmed` didn't set `isActiveSlot`, so the slot could be double-booked. Now it re-claims the slot, with `409` if it's been taken.
+
+**How this was verified:** an end-to-end script against the real backend + local MongoDB, with a test-only fetch preload (kept outside the repo) standing in for `api.razorpay.com`. **52/52 checks passed**, covering: signature rejection; confirm-by-webhook only; duplicate deliveries are no-ops; `payment.failed` then a retry still confirms; expired hold + late payment → `needs_manual_refund` and recorded; patient cancel 24h+ refunds exactly once; 5 concurrent cancels → one `200`, one Razorpay refund call; inside 24h rejected; admin cancel requires refund choice; double refund → `409`; Razorpay refund failure → flagged, admin retry works; `refund.failed` webhook reverts and allows retry; order failure releases the slot; client-supplied amount rejected; online without consent / online + pay-at-clinic rejected. Separately confirmed: missing Razorpay vars, a live key in dev, and a typo'd flag all crash startup; with the flag off, online/pay_now → `400`, webhook and refund routes → `404`, pay-at-clinic still `201`. Server log checked: ids only, no patient data or secrets. Frontend `vite build` passes. Test data deleted afterwards.
+
+**Not verified yet (needs real Razorpay TEST keys):** the actual Checkout popup in a browser, a real `payment.captured` from Razorpay's servers to a public webhook URL, and a real refund. See the testing steps in the handoff.
+
+**Left undone (by design):** confirmation email for `pay_now` bookings and Meet links (Phase 6 — see the open question about the access token below); automated test suite (Phase 7). Open question for Phase 6: the confirmation email needs the patient's manage link, but only the token's hash is stored, so the webhook can't rebuild the link.
+
+---
+
 ## Phase 4 — Booking UI rework, patient token page, cancel flow
 **Done: 2026-11-08** · Branch: `phase-4-booking-ui`
 

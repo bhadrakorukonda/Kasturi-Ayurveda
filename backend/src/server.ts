@@ -5,7 +5,7 @@ import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import mongoose from 'mongoose';
 import { connectDB } from './config/database';
-import { env } from './config/env';
+import { env, PAYMENTS_ENABLED } from './config/env';
 import appointmentRoutes from './routes/appointment.routes';
 import contactRoutes from './routes/contact.routes';
 import authRoutes from './routes/auth.routes';
@@ -13,6 +13,7 @@ import doctorRoutes from './routes/doctor.routes';
 import configRoutes from './routes/config.routes';
 import settingsRoutes from './routes/settings.routes';
 import availabilityRoutes from './routes/availability.routes';
+import paymentRoutes from './routes/payment.routes';
 import { errorHandler } from './middleware/error.middleware';
 import { expireStaleHolds } from './utils/holdExpiry.util';
 
@@ -61,6 +62,17 @@ app.use(
     credentials: true,
   })
 );
+
+// Razorpay webhook. Mounted before express.json() (it needs the raw body
+// for signature verification) and before the general /api rate limiter
+// (Razorpay retries must never be throttled; every request is HMAC-checked
+// anyway). Not mounted at all while PAYMENTS_ENABLED=false, so it 404s.
+if (PAYMENTS_ENABLED) {
+  app.use('/api/payments', paymentRoutes);
+  console.log('💳 Payments enabled: /api/payments/webhook is live');
+} else {
+  console.log('💳 Payments disabled (PAYMENTS_ENABLED=false): online/pay_now bookings rejected');
+}
 
 // Rate limiting
 const limiter = rateLimit({
