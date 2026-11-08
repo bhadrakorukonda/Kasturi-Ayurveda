@@ -1,7 +1,7 @@
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import { AlertCircle, Check, Loader2 } from "lucide-react";
 import { startOfDay, addDays, isBefore, isAfter } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { API_URL } from "@/lib/api";
+import { openRazorpayCheckout, RazorpayPaymentParams } from "@/lib/razorpay";
 
 interface PublicDoctor {
   id: string;
@@ -29,9 +30,19 @@ interface PublicConfig {
   minNoticeMins: number;
   maxAdvanceDays: number;
   refundWindowHours: number;
+  paymentsEnabled: boolean;
+  holdMinutes: number;
 }
 
 type Mode = "in_person" | "online";
+type PaymentMode = "pay_now" | "pay_at_clinic";
+
+interface PendingPayment {
+  id: string;
+  accessToken: string;
+  holdExpiresAt: string;
+  payment: RazorpayPaymentParams;
+}
 
 const formatDateYYYYMMDD = (date: Date): string => {
   const y = date.getFullYear();
@@ -69,8 +80,16 @@ const Booking = () => {
   });
   const [mode, setMode] = useState<Mode>("in_person");
   const [consentAccepted, setConsentAccepted] = useState(false);
+  const [inPersonPaymentMode, setInPersonPaymentMode] = useState<PaymentMode>("pay_at_clinic");
   const [createdAppointment, setCreatedAppointment] = useState<{ id: string; accessToken: string } | null>(null);
+  const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
+  const [isOpeningCheckout, setIsOpeningCheckout] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
+
+  // Online consultations are always paid up front; in-person can choose
+  // once payments are live. The server enforces the same rules.
+  const paymentMode: PaymentMode = mode === "online" ? "pay_now" : inPersonPaymentMode;
 
   const [doctors, setDoctors] = useState<PublicDoctor[]>([]);
   const [config, setConfig] = useState<PublicConfig | null>(null);
@@ -163,6 +182,40 @@ const Booking = () => {
     }
   };
 
+  const startCheckout = async (pending: PendingPayment) => {
+    setIsOpeningCheckout(true);
+    try {
+      await openRazorpayCheckout(
+        pending.payment,
+        {
+          name: formData.name,
+          email: formData.email || undefined,
+          contact: formData.phone,
+        },
+        {
+          // Not proof of payment: the booking page waits for the server to
+          // confirm it via Razorpay's webhook.
+          onSuccess: () => navigate(`/booking/${pending.id}?token=${pending.accessToken}`),
+          onDismiss: () => setIsOpeningCheckout(false),
+          onFailure: () => {
+            toast({
+              title: "Payment failed",
+              description: "No money was taken. You can try again while your slot is held.",
+              variant: "destructive",
+            });
+          },
+        }
+      );
+    } catch (error) {
+      setIsOpeningCheckout(false);
+      toast({
+        title: "Payment unavailable",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleSubmit = async () => {
     if (!formData.date || !formData.slotStart) return;
 
@@ -173,7 +226,7 @@ const Booking = () => {
         doctorId: formData.doctorId,
         slotStart: formData.slotStart,
         mode,
-        paymentMode: mode === "online" ? "pay_now" : "pay_at_clinic",
+        paymentMode,
         patient: {
           name: formData.name,
           phone: formData.phone,
@@ -201,6 +254,20 @@ const Booking = () => {
       }
 
       setCreatedAppointment({ id: data.data.id, accessToken: data.data.accessToken });
+
+      if (data.data.payment) {
+        const pending: PendingPayment = {
+          id: data.data.id,
+          accessToken: data.data.accessToken,
+          holdExpiresAt: data.data.holdExpiresAt,
+          payment: data.data.payment,
+        };
+        setPendingPayment(pending);
+        setStep(5);
+        void startCheckout(pending);
+        return;
+      }
+
       toast({
         title: "Appointment Booked!",
         description: "You will receive a confirmation email shortly.",
@@ -313,6 +380,28 @@ const Booking = () => {
                           )}
                         </SelectContent>
                       </Select>
+
+                      {mode === "in_person" && config.paymentsEnabled && (
+                        <div className="space-y-3 pt-2">
+                          <Label>Payment</Label>
+                          <Select
+                            value={inPersonPaymentMode}
+                            onValueChange={(value) => setInPersonPaymentMode(value as PaymentMode)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="pay_at_clinic">Pay at the clinic</SelectItem>
+                              <SelectItem value="pay_now">Pay now online</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+
+                      {mode === "online" && (
+                        <p className="text-xs text-muted-foreground">Online consultations are paid in advance.</p>
+                      )}
 
                       {mode === "online" && (
                         <div className="flex items-start gap-2 pt-1">
@@ -429,7 +518,56 @@ const Booking = () => {
                 </div>
               )}
 
-              {step === 5 && (
+              {step === 5 && pendingPayment && (
+                <div className="space-y-6">
+                  <div className="text-center py-6">
+                    <h3 className="text-2xl font-semibold mb-2">Complete your payment</h3>
+                    <p className="text-muted-foreground">
+                      Your slot is held until{" "}
+                      <span className="font-medium text-foreground">{formatISTTime(pendingPayment.holdExpiresAt)}</span>.
+                      It is only confirmed once the payment goes through.
+                    </p>
+                  </div>
+
+                  <div className="bg-accent/30 rounded-lg p-6 space-y-3">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Mode:</span>
+                      <span className="font-medium">{mode === "online" ? "Online" : "In-person"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Date & Time:</span>
+                      <span className="font-medium">{formData.slotStart && formatISTDateTime(formData.slotStart)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Amount:</span>
+                      <span className="font-medium">₹{(pendingPayment.payment.amount / 100).toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  <Button
+                    className="w-full rounded-full"
+                    onClick={() => startCheckout(pendingPayment)}
+                    disabled={isOpeningCheckout}
+                  >
+                    {isOpeningCheckout ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Opening payment...
+                      </>
+                    ) : (
+                      `Pay ₹${(pendingPayment.payment.amount / 100).toFixed(2)}`
+                    )}
+                  </Button>
+
+                  <Link to={`/booking/${pendingPayment.id}?token=${pendingPayment.accessToken}`}>
+                    <Button variant="outline" className="w-full rounded-full">
+                      I've already paid: check my booking
+                    </Button>
+                  </Link>
+                </div>
+              )}
+
+              {step === 5 && !pendingPayment && (
                 <div className="space-y-6">
                   <div className="text-center py-8">
                     <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto mb-4">
@@ -497,7 +635,7 @@ const Booking = () => {
                         Booking...
                       </>
                     ) : (
-                      step === 4 ? "Confirm Booking" : "Next"
+                      step === 4 ? (paymentMode === "pay_now" ? "Continue to Payment" : "Confirm Booking") : "Next"
                     )}
                   </Button>
                 </div>

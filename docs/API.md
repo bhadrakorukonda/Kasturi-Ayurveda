@@ -1,6 +1,6 @@
 # API reference (live)
 
-This documents the API **as it actually exists right now** (through Phase 4). It's a living reference — update it in place when an endpoint changes, don't append history here (that's [PROGRESS.md](PROGRESS.md)). See [CLAUDE.md](../CLAUDE.md) for the target surface and the rules behind these decisions.
+This documents the API **as it actually exists right now** (through Phase 5). It's a living reference — update it in place when an endpoint changes, don't append history here (that's [PROGRESS.md](PROGRESS.md)). See [CLAUDE.md](../CLAUDE.md) for the target surface and the rules behind these decisions.
 
 Base URL: `${VITE_API_URL}` (frontend) / `http://localhost:5000/api` (local dev). All request/response bodies are JSON.
 
@@ -43,10 +43,11 @@ Public.
 ```json
 { "status": "success", "data": {
   "consultationPriceINR": 50000, "consultationPriceDisplay": "₹500.00",
-  "modes": ["in_person"], "minNoticeMins": 120, "maxAdvanceDays": 30, "refundWindowHours": 24
+  "modes": ["in_person"], "minNoticeMins": 120, "maxAdvanceDays": 30, "refundWindowHours": 24,
+  "paymentsEnabled": false, "holdMinutes": 10
 } }
 ```
-`modes` includes `"online"` only when `PAYMENTS_ENABLED=true`. USD fields are never included while `usdEnabled` is false.
+`modes` includes `"online"` only when `PAYMENTS_ENABLED=true`; `paymentsEnabled` tells the UI whether to offer "pay now" for in-person bookings. USD fields are never included while `usdEnabled` is false.
 
 ### `GET /api/settings/admin`
 Admin only. Full `Settings` document.
@@ -85,7 +86,7 @@ Public. Creates a `consultation` appointment. The server derives `slotEnd` and `
 ```
 `consentAccepted: true` is required (and the only thing accepted) when `mode: "online"`.
 
-**Currently, only `mode: "in_person"` + `paymentMode: "pay_at_clinic"` can succeed** — every other combination is rejected because `PAYMENTS_ENABLED=false`:
+While `PAYMENTS_ENABLED=false` (production today), only `mode: "in_person"` + `paymentMode: "pay_at_clinic"` can succeed.
 | Condition | Response |
 |---|---|
 | `mode: "online"` with `paymentMode != "pay_now"` | `400` |
@@ -96,14 +97,24 @@ Public. Creates a `consultation` appointment. The server derives `slotEnd` and `
 | `slotStart` not a legal slot (wrong grid, outside hours, blocked date, inside min-notice, beyond max-advance) | `400` |
 | slot already booked (pre-check, fast path) | `409` |
 | slot booked by a concurrent request (DB unique-index catch, the real guarantee) | `409` |
+| `pay_now`: Razorpay order creation failed (hold is released immediately) | `502` |
 
-Success (`201`):
+Success, `pay_at_clinic` (`201`):
 ```json
 { "status": "success", "data": {
   "id", "doctorId", "slotStart", "slotEnd", "mode", "paymentMode", "status": "confirmed",
   "amountDue": 50000, "accessToken": "<64-char hex, shown once>"
 } }
 ```
+Success, `pay_now` (`201`): created as `status: "pending_payment"` with `isActiveSlot: true` and `holdExpiresAt = now + Settings.holdMinutes`, and a Razorpay order is created server-side for `Settings.consultationPrice.INR`:
+```json
+{ "status": "success", "data": {
+  "id", "...same fields...", "status": "pending_payment", "holdExpiresAt": "...", "accessToken": "...",
+  "payment": { "keyId": "rzp_test_...", "orderId": "order_...", "amount": 50000, "currency": "INR" }
+} }
+```
+The frontend opens Razorpay Checkout with `payment`. The Checkout success callback is **not** trusted: the booking is confirmed only by the `payment.captured` webhook. No confirmation email is sent for `pay_now` yet (Phase 6).
+
 `accessToken` is the one-time raw patient access token — only its SHA-256 hash is stored server-side (`accessTokenHash`). The frontend builds `/booking/<id>?token=<accessToken>` from this and shows it on the confirmation screen (and the confirmation email, when an email was given).
 
 ### `GET /api/appointments/:id` — dual-mode: patient (`?token=`) or admin/staff (JWT), same route
@@ -113,7 +124,7 @@ Rate-limited (30 req / 15 min / IP) together with the cancel route below.
 ```json
 { "status": "success", "data": {
   "id", "doctorName", "specialization", "slotStart", "slotEnd", "mode", "paymentMode",
-  "status", "amountDue", "currency", "meetLink", "patientName",
+  "paymentStatus", "status", "amountDue", "amountPaid", "amountRefunded", "currency", "meetLink", "patientName",
   "cancellable": true
 } }
 ```
@@ -128,15 +139,41 @@ Public, token-gated (no admin equivalent — admins cancel via `PUT /api/appoint
 | missing/invalid token | `403` |
 | `status !== "confirmed"` (already cancelled/completed/etc.) | `400` |
 | inside `Settings.refundWindowHours` of `slotStart` | `400`, with a message pointing the patient to call the clinic |
-| success | `200`, same patient-safe shape as the GET above, `status: "cancelled"` |
+| success | `200`, same patient-safe shape as the GET above, `status: "cancelled"`, plus top-level `refund: "refunded" \| "needs_manual_refund" \| "none"` |
 
-If `paymentStatus === "paid"` at cancel time (not reachable yet — `pay_now` is blocked while `PAYMENTS_ENABLED=false`), it's set to `needs_manual_refund` instead of just cancelling, so a captured payment is never silently dropped. Real refunds are Phase 5.
+The cancel is a single atomic `findOneAndUpdate` (status `confirmed` AND `slotStart >= now + refundWindowHours`), so concurrent or repeated cancels can't both win. A `paid` booking is then refunded in full automatically. If Razorpay rejects the refund, the booking stays cancelled and `paymentStatus` becomes `needs_manual_refund` (shown in the admin dashboard).
 
 ### `GET /api/appointments` *(admin/staff)*
-Query: `status`, `date` (filters by `slotStart` day), `page`, `limit`. Paginated list, sorted by `slotStart`, `doctorId` populated to `{ _id, name, specialization }`.
+Query (zod-validated, bad values → `400`): `status`, `paymentStatus`, `date` (`YYYY-MM-DD`, filters by `slotStart` day), `page`, `limit` (max 200). Paginated list, sorted by `slotStart`, `doctorId` populated to `{ _id, name, specialization }`. The dashboard uses `?paymentStatus=needs_manual_refund&limit=200` for its refund banner.
 
 ### `PUT /api/appointments/:id` *(admin/staff)*
-Body: `{ "status": "confirmed" | "completed" | "cancelled" | "no_show" }` — nothing else accepted. Transitioning to `completed`/`cancelled`/`no_show` unsets `isActiveSlot` (frees the slot); `cancelled` also sets `cancelledAt`/`cancelledBy: "admin"`. No refund logic yet (Phase 5).
+Body: `{ "status": "confirmed" | "completed" | "cancelled" | "no_show", "refund"?: boolean }`, nothing else accepted.
+- `completed`/`cancelled`/`no_show` unset `isActiveSlot` (frees the slot); `cancelled` also sets `cancelledAt`/`cancelledBy: "admin"`.
+- `confirmed` re-claims the slot (`isActiveSlot: true`); `409` if someone else has booked it since.
+- Cancelling a `paid` booking **requires** `refund: true` or `refund: false` (`400` otherwise). `refund: true` is admin-only (`403` for staff) and issues a full refund. Response includes `refund: "refunded" | "needs_manual_refund" | "none"`.
+
+### `POST /api/appointments/:id/refund` *(admin only)*
+Full refund of `amountPaid - amountRefunded`, at any time and in any status; the booking status is not changed. `404` while `PAYMENTS_ENABLED=false`.
+| Condition | Response |
+|---|---|
+| refunded | `200` with the updated document (`paymentStatus: "refunded"`, `razorpayRefundId`, `amountRefunded`) |
+| unpaid / already refunded / refund already in flight | `409` |
+| Razorpay rejected it | `502`; `paymentStatus` set to `needs_manual_refund` |
+
+Idempotent: the appointment is claimed atomically (`paymentStatus` in `paid`/`needs_manual_refund`, no `razorpayRefundId`, no live `refundLockedAt`) before Razorpay is called, so only one request can ever issue the refund.
+
+---
+
+## Payments (only mounted when `PAYMENTS_ENABLED=true`; otherwise `404`)
+
+### `POST /api/payments/webhook`
+Called by Razorpay. Configure it in the Razorpay dashboard (TEST mode) with events `payment.captured`, `payment.failed`, `refund.failed`, and the same secret as `RAZORPAY_WEBHOOK_SECRET`.
+- Body is read raw (`express.raw`, this route only) and the `X-Razorpay-Signature` HMAC-SHA256 is verified on those exact bytes. Missing/invalid signature → `400`.
+- Not behind the general `/api` rate limiter (Razorpay retries must never be throttled).
+- `payment.captured`: matched by `order_id`. If that `razorpayPaymentId` was already processed → `200`, no-op. If the hold is still active → `status: confirmed`, `paymentStatus: paid`, `amountPaid`, `razorpayPaymentId`. If the hold had already expired (or amount/currency mismatch) → `paymentStatus: needs_manual_refund` with the payment recorded. Never silently dropped.
+- `payment.failed`: `paymentStatus: failed` on an unpaid pending booking; the hold is kept so the patient can retry in Checkout.
+- `refund.failed`: reverts `amountRefunded`, clears `razorpayRefundId`, sets `needs_manual_refund` so an admin can retry.
+- All other events → `200` and ignored. DB errors → `500`, so Razorpay retries.
 
 ### `DELETE /api/appointments/:id` *(admin only)*
 Hard delete.
@@ -168,6 +205,5 @@ Public, rate-limited (5 failed attempts / 15 min / IP). `{ email, password }` �
 ---
 
 ## Not yet built
-- `POST /api/payments/webhook` — Phase 5.
 - Admin `therapy_session` creation — not yet assigned a phase.
-- Refund endpoints — Phase 5.
+- Google Meet link, transactional email (incl. `pay_now` confirmation), reminders — Phase 6.

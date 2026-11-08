@@ -6,6 +6,7 @@ import {
   updateAppointment,
   deleteAppointment,
   cancelAppointment,
+  refundAppointmentAdmin,
 } from '../controllers/appointment.controller';
 import { protect, authorize } from '../middleware/auth.middleware';
 import { patientAccessLimiter, requirePatientToken, optionalPatientToken, maybeAdminAuth } from '../middleware/patientAccess.middleware';
@@ -25,6 +26,7 @@ router.get('/:id', patientAccessLimiter, optionalPatientToken, maybeAdminAuth, g
 router.use(protect);
 router.get('/', authorize('admin', 'staff'), getAllAppointments);
 router.put('/:id', authorize('admin', 'staff'), updateAppointment);
+router.post('/:id/refund', authorize('admin'), refundAppointmentAdmin);
 router.delete('/:id', authorize('admin'), deleteAppointment);
 
 export default router;

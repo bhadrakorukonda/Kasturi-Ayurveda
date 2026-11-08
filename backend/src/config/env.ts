@@ -21,7 +21,11 @@ const envSchema = z.object({
   RATE_LIMIT_MAX_REQUESTS: z.string().default('100'),
   ADMIN_EMAIL: z.string().optional(),
   ADMIN_PASSWORD: z.string().optional(),
-  PAYMENTS_ENABLED: z.string().default('false'),
+  PAYMENTS_ENABLED: z.enum(['true', 'false']).default('false'),
+  // Required only when PAYMENTS_ENABLED=true (enforced in parseEnv below).
+  RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_SECRET: z.string().optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
 });
 
 const parseEnv = () => {
@@ -36,6 +40,24 @@ const parseEnv = () => {
 
   const parsed = result.data;
 
+  if (parsed.PAYMENTS_ENABLED === 'true') {
+    const missing = (['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET'] as const).filter(
+      (key) => !parsed[key]
+    );
+    if (missing.length > 0) {
+      console.error('❌ PAYMENTS_ENABLED=true but these Razorpay variables are missing:');
+      missing.forEach((key) => console.error(`   - ${key}`));
+      process.exit(1);
+    }
+
+    // Live keys only ever belong on the production server; anywhere else
+    // this is almost certainly a mistake that would move real money.
+    if (parsed.RAZORPAY_KEY_ID!.startsWith('rzp_live_') && parsed.NODE_ENV !== 'production') {
+      console.error('❌ A live Razorpay key (rzp_live_...) is configured outside NODE_ENV=production. Use rzp_test_ keys.');
+      process.exit(1);
+    }
+  }
+
   // Log warning if email configuration is incomplete
   if (!parsed.EMAIL_HOST || !parsed.EMAIL_USER || !parsed.EMAIL_PASSWORD) {
     console.warn('⚠️  Warning: Email configuration is incomplete. Emails will not be sent.');
@@ -46,7 +68,6 @@ const parseEnv = () => {
 
 export const env = parseEnv();
 
-// PAYMENTS_ENABLED gates online booking + payment routes. Razorpay env vars
-// are only required at startup once this is true (not wired up until a
-// later phase).
+// PAYMENTS_ENABLED gates online booking, pay_now, and the payment webhook
+// route. Razorpay env vars are only required at startup once this is true.
 export const PAYMENTS_ENABLED = env.PAYMENTS_ENABLED === 'true';

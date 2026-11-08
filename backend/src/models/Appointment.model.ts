@@ -27,6 +27,7 @@ export interface IAppointment extends Document {
   razorpayOrderId?: string;
   razorpayPaymentId?: string;
   razorpayRefundId?: string;
+  refundLockedAt?: Date;
   meetLink?: string;
   patient: IPatient;
   consentAcceptedAt?: Date;
@@ -151,6 +152,13 @@ const appointmentSchema = new Schema<IAppointment>(
     razorpayRefundId: {
       type: String,
     },
+    // Internal: set while a refund call to Razorpay is in flight so two
+    // concurrent refund requests can't both reach Razorpay. Cleared when
+    // the call finishes; a lock older than a few minutes is treated as
+    // stale (process crashed mid-call). See refund.util.ts.
+    refundLockedAt: {
+      type: Date,
+    },
     meetLink: {
       type: String,
     },
@@ -188,5 +196,7 @@ appointmentSchema.index(
 appointmentSchema.index({ holdExpiresAt: 1 });
 appointmentSchema.index({ razorpayPaymentId: 1 }, { unique: true, sparse: true });
 appointmentSchema.index({ razorpayOrderId: 1 }, { unique: true, sparse: true });
+appointmentSchema.index({ razorpayRefundId: 1 }, { sparse: true });
+appointmentSchema.index({ paymentStatus: 1 });
 
 export default mongoose.model<IAppointment>('Appointment', appointmentSchema);

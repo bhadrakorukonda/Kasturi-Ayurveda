@@ -28,13 +28,39 @@ interface PatientAppointmentView {
   slotEnd: string;
   mode: "in_person" | "online";
   paymentMode: "pay_now" | "pay_at_clinic";
+  paymentStatus: "unpaid" | "paid" | "refunded" | "failed" | "needs_manual_refund";
   status: "pending_payment" | "confirmed" | "completed" | "cancelled" | "no_show";
   amountDue: number;
+  amountPaid: number;
+  amountRefunded: number;
   currency: string;
   meetLink?: string;
   patientName?: string;
   cancellable: boolean;
 }
+
+// While a payment is awaiting the server's webhook confirmation, re-check
+// every few seconds for up to ~2 minutes.
+const POLL_INTERVAL_MS = 3000;
+const MAX_POLLS = 40;
+
+const rupees = (paise: number) => `₹${(paise / 100).toFixed(2)}`;
+
+const paymentLabel = (a: PatientAppointmentView): string => {
+  if (a.paymentMode === "pay_at_clinic") return `Pay at clinic · ${rupees(a.amountDue)}`;
+  switch (a.paymentStatus) {
+    case "paid":
+      return `Paid online · ${rupees(a.amountPaid)}`;
+    case "refunded":
+      return `Refunded · ${rupees(a.amountRefunded)}`;
+    case "needs_manual_refund":
+      return `Refund pending · ${rupees(a.amountPaid)}`;
+    case "failed":
+      return `Payment failed · ${rupees(a.amountDue)}`;
+    default:
+      return `Awaiting payment · ${rupees(a.amountDue)}`;
+  }
+};
 
 const formatISTDateTime = (iso: string): string =>
   new Date(iso).toLocaleString("en-IN", {
@@ -83,10 +109,13 @@ const BookingStatus = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [pollCount, setPollCount] = useState(0);
 
-  const loadAppointment = () => {
-    setIsLoading(true);
-    setLoadError(null);
+  const loadAppointment = (silent = false) => {
+    if (!silent) {
+      setIsLoading(true);
+      setLoadError(null);
+    }
 
     fetch(`${API_URL}/appointments/${id}?token=${encodeURIComponent(token)}`)
       .then(async (r) => {
@@ -97,10 +126,13 @@ const BookingStatus = () => {
         setAppointment(json.data);
       })
       .catch((error) => {
-        setLoadError(error instanceof Error ? error.message : "This link is invalid or has expired.");
+        // A failed background poll shouldn't wipe a page that already loaded.
+        if (!silent) {
+          setLoadError(error instanceof Error ? error.message : "This link is invalid or has expired.");
+        }
       })
       .finally(() => {
-        setIsLoading(false);
+        if (!silent) setIsLoading(false);
       });
   };
 
@@ -113,6 +145,18 @@ const BookingStatus = () => {
     loadAppointment();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, token]);
+
+  const isAwaitingPayment = appointment?.status === "pending_payment";
+
+  useEffect(() => {
+    if (!isAwaitingPayment || pollCount >= MAX_POLLS) return;
+    const timer = setTimeout(() => {
+      setPollCount((n) => n + 1);
+      loadAppointment(true);
+    }, POLL_INTERVAL_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAwaitingPayment, pollCount]);
 
   const handleCancel = async () => {
     setIsCancelling(true);
@@ -129,7 +173,15 @@ const BookingStatus = () => {
       }
 
       setAppointment(data.data);
-      toast({ title: "Appointment cancelled" });
+      toast({
+        title: "Appointment cancelled",
+        description:
+          data.refund === "refunded"
+            ? "A full refund has been issued. It usually reaches your account in 5–7 working days."
+            : data.refund === "needs_manual_refund"
+              ? "Your refund couldn't be processed automatically. The clinic will issue it and contact you."
+              : undefined,
+      });
     } catch (error) {
       setCancelError(error instanceof Error ? error.message : "Could not cancel this appointment.");
     } finally {
@@ -171,6 +223,27 @@ const BookingStatus = () => {
                     <Badge variant={statusBadgeVariant(appointment.status)}>{statusLabel(appointment.status)}</Badge>
                   </div>
 
+                  {isAwaitingPayment && pollCount < MAX_POLLS && (
+                    <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Waiting for payment confirmation...
+                    </div>
+                  )}
+
+                  {isAwaitingPayment && pollCount >= MAX_POLLS && (
+                    <p className="text-sm text-muted-foreground text-center">
+                      We haven't received confirmation of your payment yet. If you paid, this page will update shortly; refresh
+                      to check again. If you didn't complete the payment, the slot will be released automatically.
+                    </p>
+                  )}
+
+                  {appointment.paymentStatus === "needs_manual_refund" && (
+                    <p className="text-sm text-center rounded-lg border border-destructive/40 p-3">
+                      We received your payment but couldn't confirm this booking (for example, the slot hold expired). The
+                      clinic will refund {rupees(appointment.amountPaid)} to you in full.
+                    </p>
+                  )}
+
                   <div className="bg-accent/30 rounded-lg p-6 space-y-3">
                     {appointment.patientName && (
                       <div className="flex justify-between">
@@ -194,11 +267,7 @@ const BookingStatus = () => {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Payment:</span>
-                      <span className="font-medium">
-                        {appointment.paymentMode === "pay_at_clinic" ? "Pay at clinic" : "Paid online"}
-                        {" · ₹"}
-                        {(appointment.amountDue / 100).toFixed(2)}
-                      </span>
+                      <span className="font-medium">{paymentLabel(appointment)}</span>
                     </div>
                     {appointment.meetLink && (
                       <div className="flex justify-between">
@@ -231,6 +300,8 @@ const BookingStatus = () => {
                           <AlertDialogTitle>Cancel this appointment?</AlertDialogTitle>
                           <AlertDialogDescription>
                             This cannot be undone. You'll need to book a new slot if you change your mind.
+                            {appointment.paymentStatus === "paid" &&
+                              ` You'll receive a full refund of ${rupees(appointment.amountPaid)}.`}
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>

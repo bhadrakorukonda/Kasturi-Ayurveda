@@ -54,6 +54,10 @@ export const getConfig = async (
         minNoticeMins: settings.minNoticeMins,
         maxAdvanceDays: settings.maxAdvanceDays,
         refundWindowHours: settings.refundWindowHours,
+        // pay_now is only offered when payments are live; holdMinutes lets
+        // the UI tell the patient how long the slot is held while paying.
+        paymentsEnabled: PAYMENTS_ENABLED,
+        holdMinutes: settings.holdMinutes,
       },
     });
   } catch (error) {

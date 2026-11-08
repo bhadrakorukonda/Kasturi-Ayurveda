@@ -3,7 +3,7 @@
 This file is the source of truth for the booking/payments build. Follow it exactly. If a task conflicts with this file, stop and ask instead of improvising.
 
 ## Current status
-Phase 1 (security fixes) is **DONE as of 2026-11-08**. Phase 1b (cookie auth) is **DEFERRED** — see "Phases" below. Phase 2 (Doctor + Settings models, seed script, public API) is **DONE as of 2026-11-08**. Phase 3 (new Appointment schema, `isActiveSlot` index, availability endpoint, hold expiry) is **DONE as of 2026-11-08**. Phase 4 (Booking UI rework, patient token page, cancel flow, admin dashboard fix) is **DONE as of 2026-11-08** — `Booking.tsx` and `Dashboard.tsx` now both speak the live API correctly end to end with `PAYMENTS_ENABLED=false`. Phase 5 (Razorpay) has not been started.
+Phase 1 (security fixes) is **DONE as of 2026-11-08**. Phase 1b (cookie auth) is **DEFERRED** — see "Phases" below. Phase 2 (Doctor + Settings models, seed script, public API) is **DONE as of 2026-11-08**. Phase 3 (new Appointment schema, `isActiveSlot` index, availability endpoint, hold expiry) is **DONE as of 2026-11-08**. Phase 4 (Booking UI rework, patient token page, cancel flow, admin dashboard fix) is **DONE as of 2026-11-08** — `Booking.tsx` and `Dashboard.tsx` now both speak the live API correctly end to end with `PAYMENTS_ENABLED=false`. Phase 5 (Razorpay orders, webhook, idempotency, refunds, behind the flag) is **DONE as of 2026-11-08**, verified against a mocked Razorpay; a run with real Razorpay TEST keys is still owed before Phase 8. Phase 6 has not been started.
 
 ## Product scope (decided)
 - ONE bookable, payable product: a **Consultation**, 30 minutes, **in-person or online**, fixed price (INR).
@@ -71,6 +71,7 @@ There is NO Service model. Remove the hardcoded service enum and lists used for 
 - `consentAcceptedAt` (Date, required for online mode)
 - `accessTokenHash` (see Patient access)
 - `cancelledAt`, `cancelledBy` (`patient` | `admin` | `system`)
+- `refundLockedAt` (internal, Phase 5: set only while a Razorpay refund call is in flight; prevents double refunds)
 - timestamps
 
 ### Indexes (critical)
@@ -122,10 +123,11 @@ There is NO Service model. Remove the hardcoded service enum and lists used for 
 - `GET /api/config` (public: consultation price, modes available given PAYMENTS_ENABLED, notice/advance window) — **LIVE (Phase 2)**.
 - `GET /api/availability?doctorId&date` returns free 30-minute slots — **LIVE (Phase 3)**.
 - `POST /api/appointments` (public, zod-validated) — **LIVE (Phase 3)**; `Booking.tsx` sends the correct payload as of Phase 4.
-- `GET /api/appointments`, `GET /api/appointments/:id` (admin), `PUT /api/appointments/:id` (admin) — **LIVE (Phase 3)**, `PUT` only supports `status` transitions (`confirmed`/`completed`/`cancelled`/`no_show`), no refund logic yet (Phase 5); `Dashboard.tsx` reads/writes the new shape correctly as of Phase 4.
+- `GET /api/appointments`, `GET /api/appointments/:id` (admin), `PUT /api/appointments/:id` (admin) — **LIVE (Phase 3)**. `PUT` supports `status` transitions plus `refund: boolean` (required when cancelling a paid booking, admin-only when true) as of Phase 5. `GET` list has a `paymentStatus` filter.
+- `POST /api/appointments/:id/refund` (admin, full refund, idempotent) — **LIVE (Phase 5)**.
 - `GET /api/appointments/:id?token=` (dual-mode: patient via token, or admin via JWT — same route) and `POST /api/appointments/:id/cancel?token=` (patient, token-gated, rate-limited) — **LIVE (Phase 4)**. Patient-facing page at `/booking/:id?token=...` (`BookingStatus.tsx`) consumes both.
-- `POST /api/payments/webhook` (only when PAYMENTS_ENABLED) — not built (Phase 5).
-- Admin `therapy_session` creation, cancel/refund — not built (refund is Phase 5; therapy_session creation isn't assigned to a phase yet, raise it if needed).
+- `POST /api/payments/webhook` (only when PAYMENTS_ENABLED) — **LIVE (Phase 5)**: handles `payment.captured`, `payment.failed`, `refund.failed`.
+- Admin `therapy_session` creation — not built (not assigned to a phase yet, raise it if needed).
 - `PUT /api/doctors/:id/schedule`, `PUT /api/settings`, `GET /api/doctors/admin` — **LIVE (Phase 2)**.
 
 ## Known bugs to fix (Phase 1)
@@ -169,4 +171,5 @@ Use Vitest/Jest with mongodb-memory-server. Must cover:
 - The consultation price (paise, set via Settings, not hardcoded) — seeded as a placeholder (`INR: 50000` = ₹500). Awaiting the clinic owner's real number.
 - `minNoticeMins` and `maxAdvanceDays` — seeded as placeholders (120 mins, 30 days).
 - Which transactional email provider (Resend or Brevo)
+- (Phase 6) How the `pay_now` confirmation email gets the patient's manage link: only `accessTokenHash` is stored, so the webhook can't rebuild `/booking/:id?token=...`. Options: send the link at booking time (before payment), or store the token encrypted (reversible). Decide before building Phase 6.
 - Razorpay account type / KYC path (deferred to Phase 8)
