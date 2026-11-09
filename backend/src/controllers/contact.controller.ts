@@ -1,11 +1,19 @@
 import { Request, Response, NextFunction } from 'express';
-import { validationResult } from 'express-validator';
 import z from 'zod';
 import Contact, { IContact } from '../models/Contact.model';
 import { sendContactConfirmation } from '../utils/email.util';
 import { logger } from '../utils/logger';
 
-// Validation schemas
+const createContactSchema = z
+  .object({
+    name: z.string().trim().min(1, 'Name is required').max(100, 'Name cannot exceed 100 characters'),
+    email: z.string().trim().email('Please provide a valid email'),
+    phone: z.string().trim().regex(/^[0-9]{10}$/, 'Please provide a valid 10-digit phone number').optional(),
+    subject: z.string().trim().min(1, 'Subject is required').max(200, 'Subject cannot exceed 200 characters'),
+    message: z.string().trim().min(1, 'Message is required').max(1000, 'Message cannot exceed 1000 characters'),
+  })
+  .strict();
+
 const updateContactSchema = z.object({
   status: z.enum(['new', 'read', 'responded']),
 }).strict();
@@ -19,16 +27,17 @@ export const createContact = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
+    const parsed = createContactSchema.safeParse(req.body);
+    if (!parsed.success) {
       res.status(400).json({
         status: 'error',
-        errors: errors.array(),
+        message: 'Invalid input',
+        errors: parsed.error.format(),
       });
       return;
     }
 
-    const contact = await Contact.create(req.body);
+    const contact = await Contact.create(parsed.data);
 
     // Send confirmation email
     try {

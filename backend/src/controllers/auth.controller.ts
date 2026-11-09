@@ -1,9 +1,32 @@
 import { Request, Response, NextFunction } from 'express';
-import { validationResult } from 'express-validator';
+import z from 'zod';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.model';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { env } from '../config/env';
+
+const registerSchema = z
+  .object({
+    name: z.string().trim().min(1, 'Name is required'),
+    email: z.string().trim().email('Please provide a valid email'),
+    password: z.string().min(6, 'Password must be at least 6 characters'),
+    role: z.enum(['admin', 'staff']).optional(),
+  })
+  .strict();
+
+const loginSchema = z
+  .object({
+    email: z.string().trim().email('Please provide a valid email'),
+    password: z.string().min(1, 'Password is required'),
+  })
+  .strict();
+
+const updatePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, 'Current password is required'),
+    newPassword: z.string().min(6, 'New password must be at least 6 characters'),
+  })
+  .strict();
 
 // Generate JWT Token
 const generateToken = (id: string): string => {
@@ -20,16 +43,17 @@ export const register = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
+    const parsed = registerSchema.safeParse(req.body);
+    if (!parsed.success) {
       res.status(400).json({
         status: 'error',
-        errors: errors.array(),
+        message: 'Invalid input',
+        errors: parsed.error.format(),
       });
       return;
     }
 
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role } = parsed.data;
 
     // Check if user exists
     const userExists = await User.findOne({ email });
@@ -75,16 +99,17 @@ export const login = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
+    const parsed = loginSchema.safeParse(req.body);
+    if (!parsed.success) {
       res.status(400).json({
         status: 'error',
-        errors: errors.array(),
+        message: 'Invalid input',
+        errors: parsed.error.format(),
       });
       return;
     }
 
-    const { email, password } = req.body;
+    const { email, password } = parsed.data;
 
     // Check for user
     const user = await User.findOne({ email }).select('+password');
@@ -155,6 +180,18 @@ export const updatePassword = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    const parsed = updatePasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        status: 'error',
+        message: 'Invalid input',
+        errors: parsed.error.format(),
+      });
+      return;
+    }
+
+    const { currentPassword, newPassword } = parsed.data;
+
     const user = await User.findById(req.user?._id).select('+password');
 
     if (!user) {
@@ -166,7 +203,7 @@ export const updatePassword = async (
     }
 
     // Check current password
-    const isMatch = await user.comparePassword(req.body.currentPassword);
+    const isMatch = await user.comparePassword(currentPassword);
 
     if (!isMatch) {
       res.status(401).json({
@@ -176,7 +213,7 @@ export const updatePassword = async (
       return;
     }
 
-    user.password = req.body.newPassword;
+    user.password = newPassword;
     await user.save();
 
     const token = generateToken(user._id.toString());

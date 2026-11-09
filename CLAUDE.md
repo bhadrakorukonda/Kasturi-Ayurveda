@@ -139,12 +139,13 @@ There is NO Service model. Remove the hardcoded service enum and lists used for 
 - JWT in localStorage; move to an HTTP-only secure cookie with CSRF consideration — **DEFERRED to Phase 1b** (see "Phases" below): the cookie would be cross-site today and browsers block it.
 
 ## Cleanup backlog
-- **Security rule violation (found in Phase 6, not fixed):** `contact.controller.ts` does `Contact.create(req.body)`, raw body into Mongoose, validated by express-validator but not whitelisted. Should be a zod `.strict()` schema like the rest.
 - Unused `CORS_ORIGIN` env var in both `.env.example` files (root and `backend/`) — `server.ts` only reads `FRONTEND_URL` for CORS; `CORS_ORIGIN` is dead and can be removed.
 - `Dashboard.tsx` keeps its own ad-hoc login/session state instead of relying solely on `ProtectedRoute`.
-- 4 pre-existing ESLint warnings in `Dashboard.tsx` (unused `User` import, missing `fetchData` dependency in a `useEffect`, two unused `error` catch bindings).
+- 2 pre-existing ESLint warnings in `Dashboard.tsx` (unused `User` import, missing `fetchData` dependency in a `useEffect`).
 - ~~The login rate limiter is only verified by manual curl testing~~ — covered by `tests/auth.test.ts` since Phase 7.
 - ~~3 old-shape test documents in `appointments`~~ — deleted during Phase 4 verification; they were crashing `Dashboard.tsx` (reading `.name` off a missing `patient` sub-object on legacy docs). `Dashboard.tsx` is now defensive against missing/legacy fields regardless (falls back to `"—"`), so this class of issue can't recur even if old-shape data shows up again.
+- ~~Security rule violation: `contact.controller.ts` did `Contact.create(req.body)`, raw body into Mongoose~~ — fixed in a hygiene pass (2026-11-09): now zod `.strict()` like the rest. `auth.controller.ts` (`register`/`login`/`updatepassword`) was also migrated from `express-validator` to zod `.strict()` in the same pass, for the same reason.
+- ~~Root-level docs (`STATUS.md`, `README.md`, `DEPLOYMENT.md`, `DEPLOY_CHECKLIST.md`) were stale~~ — fixed (2026-11-09): `STATUS.md` (dev scratch notes containing a committed admin credential) deleted; the other three rewritten to match the current stack/env vars/deploy target (Vercel + Render) instead of the pre-rebuild Gmail/Railway/VPS instructions, and now point to `CLAUDE.md`/`docs/` for anything that duplicates them.
 
 ## Phases
 1. Security fixes and bug list above. No schema changes. — **DONE (2026-11-08)**.

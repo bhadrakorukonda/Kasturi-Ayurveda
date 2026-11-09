@@ -306,7 +306,7 @@ const Dashboard = () => {
     } catch (error) {
       toast({
         title: "Update failed",
-        description: "Failed to update message status",
+        description: error instanceof Error ? error.message : "Failed to update message status",
         variant: "destructive"
       });
     }

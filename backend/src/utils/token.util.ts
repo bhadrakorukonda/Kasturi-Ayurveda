@@ -11,8 +11,9 @@ export const generatePatientAccessToken = (): { token: string; hash: string } =>
 };
 
 // Constant-time compare so a mistyped/guessed token can't be distinguished
-// from a correct-length-wrong-value one by response timing.
-export const verifyPatientAccessToken = (token: string, storedHash: string): boolean => {
+// from a correct-length-wrong-value one by response timing. Not exported —
+// callers outside this file should use verifyAnyPatientAccessToken below.
+const verifyPatientAccessToken = (token: string, storedHash: string): boolean => {
   const candidateHash = crypto.createHash('sha256').update(token).digest();
   const storedHashBuffer = Buffer.from(storedHash, 'hex');
 
